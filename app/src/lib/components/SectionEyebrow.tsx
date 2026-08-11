@@ -1,6 +1,6 @@
 export default function SectionEyebrow({ icon, children }: { icon: string, children: React.ReactNode }) {
   return (
-    <div className="mb-3 flex items-center gap-2">
+    <div className="flex items-center gap-2">
       <span
         className="h-px flex-1 opacity-40"
         style={{

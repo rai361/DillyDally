@@ -1,12 +1,13 @@
 'use client';
 
-import { getSideQuests } from '@/lib';
+import { getSideQuests } from '@/lib/functions';
 import { HypeIndicator, PriceIndicator, TimeIndicator } from '@/lib/components/Indicators';
-import useAuth from '@/lib/hooks/useAuth';
-import { useQueries, useQuery } from '@tanstack/react-query';
+import useProfile from '@/lib/hooks/useProfile';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { Category, Spot } from '@/lib/types';
+import { useQuery } from '@tanstack/react-query';
 
 const MapContainer = dynamic(
   () => import('react-leaflet').then((mod) => mod.MapContainer),
@@ -29,31 +30,11 @@ const ZoomControl = dynamic(
   { ssr: false }
 );
 
-// const { MapContainer, TileLayer, Marker, Popup, ZoomControl } = dynamic(
-//   () => import('react-leaflet').then((mod) => { mod }),
-//   { ssr: false }
-// )
-
 const UTSG_COORDS: [number, number] = [43.6629, -79.3957];
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-
-type Category = 'User Submitted' | 'Promoted' | 'Food!' | 'Parks';
-
-interface Spot {
-  id: string;
-  position: [number, number];
-  title: string;
-  description: string;
-  image: string;
-  price: 1 | 2 | 3 | 4; // out of 4
-  hype: 1 | 2 | 3 | 4 | 5; // out of 5
-  time: string;
-  category: Category;
-  tags: string[];
-}
 
 /**
  * Backend integration point.
@@ -173,7 +154,7 @@ function SpotCard({ spot, onExpand }: { spot: Spot; onExpand: (spot: Spot) => vo
 function ExpandedWidget({ spot, onClose }: { spot: Spot; onClose: () => void }) {
   return (
     <div
-      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-4"
+      className="fixed inset-0 z-1000 flex items-center justify-center bg-black/40 p-4"
       onClick={onClose}
     >
       <div
@@ -313,11 +294,11 @@ function Sidebar({
     <>
       {/* Mobile backdrop */}
       {open && (
-        <div onClick={onClose} className="fixed inset-0 z-[550] bg-black/30 sm:hidden" />
+        <div onClick={onClose} className="fixed inset-0 z-550 bg-black/30 sm:hidden" />
       )}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-[600] flex w-[85%] max-w-xs transform flex-col bg-[#f5ecd9] shadow-2xl transition-transform duration-300 ease-out sm:static sm:w-80 sm:max-w-none sm:translate-x-0 sm:shadow-none ${
+        className={`fixed inset-y-0 left-0 z-600 flex w-[85%] max-w-xs transform flex-col bg-[#f5ecd9] shadow-2xl transition-transform duration-300 ease-out sm:static sm:w-80 sm:max-w-none sm:translate-x-0 sm:shadow-none ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
@@ -510,7 +491,7 @@ function Sidebar({
 }
 
 function AccountPill() {
-  const { user, profile } = useAuth();
+  const { profile } = useProfile();
 
   return (
       <Link
@@ -544,21 +525,18 @@ export default function DillyDallyPage() {
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [query, setQuery] = useState('');
+  
   const [activeCategories, setActiveCategories] = useState<Set<Category>>(
     new Set(ALL_CATEGORIES)
   );
 
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
 
-  // const [spots, setSpots] = useState<Spot[]>(ALL_SPOTS);
-
   let { data: spots, isPending } = useQuery({
     queryKey: ['spots'],
     queryFn: getSideQuests,
     initialData: []
   });
-
-  console.log(spots);
 
   useEffect(() => {
     import('./leaflet-icon-fix');
@@ -580,7 +558,8 @@ export default function DillyDallyPage() {
           popupAnchor: [0, -22],
         });
 
-      setIcons({
+      setIcons(       
+        {
         'User Submitted': makeIcon(CATEGORY_PIN_COLORS['User Submitted']),
         Promoted: makeIcon(CATEGORY_PIN_COLORS['Promoted']),
         'Food!': makeIcon(CATEGORY_PIN_COLORS['Food!']),
@@ -608,6 +587,7 @@ export default function DillyDallyPage() {
       }
       return next;
     });
+
     setActiveTags((prev) => {
       const stillValid = new Set(
         spots.filter((s) => activeCategories.has(s.category) || s.category === category)
@@ -703,7 +683,7 @@ export default function DillyDallyPage() {
         {/* Mobile menu toggle */}
         <button
           onClick={() => setSidebarOpen(true)}
-          className={`absolute left-4 top-4 z-[500] flex items-center gap-1.5 rounded-full bg-[#f5ecd9] px-3 py-2 text-sm readable-font font-semibold text-[#4a3f2f] shadow-lg sm:hidden`}
+          className={`absolute left-4 top-4 z-500 flex items-center gap-1.5 rounded-full bg-[#f5ecd9] px-3 py-2 text-sm readable-font font-semibold text-[#4a3f2f] shadow-lg sm:hidden`}
         >
           ☰ Explore
         </button>
@@ -711,13 +691,13 @@ export default function DillyDallyPage() {
         <AccountPill />
 
         {isPending && (
-          <div className={`absolute right-4 top-16 z-[500] rounded-full bg-[#f5ecd9] px-3 py-1.5 text-sm readable-font font-semibold text-[#6b5d45] shadow-md`}>
+          <div className={`absolute right-4 top-16 z-500 rounded-full bg-[#f5ecd9] px-3 py-1.5 text-sm readable-font font-semibold text-[#6b5d45] shadow-md`}>
             Searching…
           </div>
         )}
 
         {!isPending && spots.length === 0 && (
-          <div className="absolute bottom-6 left-1/2 z-[500] w-[90%] max-w-sm -translate-x-1/2 rounded-2xl bg-[#f5ecd9] p-4 text-center shadow-lg">
+          <div className="absolute bottom-6 left-1/2 z-500 w-[90%] max-w-sm -translate-x-1/2 rounded-2xl bg-[#f5ecd9] p-4 text-center shadow-lg">
             <p className={`text-base readable-font font-semibold text-[#4a3f2f]`}>No sidequests match yet.</p>
             <p className={`mt-1 text-sm readable-font text-[#6b5d45]`}>
               Try clearing a tag or category filter.

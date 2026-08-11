@@ -1,4 +1,4 @@
-import { getSubmissions } from "@/lib";
+import { getUserProfile } from "@/lib/functions";
 import { isAdmin } from "@/lib/auth";
 import { PriceIndicator, TimeIndicator } from "@/lib/components/Indicators";
 import { createSupabaseClient, supabaseServer } from "@/lib/supabase/server"
@@ -40,8 +40,21 @@ export default async function AdminDashboard() {
 
     const { data: { users } } = await supabaseServer.auth.admin.listUsers();
 
-    const submissions = await getSubmissions(supabaseServer);
-    console.log(submissions);
+    const { data } = await supabaseServer
+        .from('users')
+        .select('*');
+
+    const records = users.map(user => ({
+        user,
+        profile: data!.find((row) => row.user_id == user.id)
+    }));
+
+    console.log(records);
+
+    const { data: submissions } = await supabase
+        .from("side_quests")
+        .select("*")
+        .eq("status", "pending");
 
     return (
         <div className="mt-32 mx-56">
@@ -52,20 +65,22 @@ export default async function AdminDashboard() {
                 <div>
                     <h2 className="text-[#4a3f2f]/50 text-4xl">Users</h2>
                     <div className="py-5 px-10 rounded-sm flex flex-col bg-[#f5ecd9] shadow-lg transition hover:-translate-y-1 hover:shadow-xl">
-                        {users.map(user => (
-                            <div className="flex flex-row items-center gap-10">
-                                <p key={user.id} className="text-2xl">{user.user_metadata.full_name}</p>
-                                <img src="IMG_5581.jpg" className="h-16 w-16 rounded-full border-4 border-[#f5ecd9] object-cover shadow-lg" />
+                        {records.map(record => (
+                            <div className="flex flex-row items-center gap-10" key={record.user.id}>
+                                <p className="text-2xl">{record.profile.display_name}</p>
+                                <img src={record.profile.avatar_url} className="h-16 w-16 rounded-full border-4 border-[#f5ecd9] object-cover shadow-lg" />
                             </div>
                         ))}
                     </div>
                 </div>
-                <div>
-                    <h2 className="text-[#4a3f2f]/50 text-4xl">Submissions</h2>
-                    <div className="flex flex-row flex-wrap gap-5">
-                        {submissions.map(spotCard)}
+                {submissions && (
+                    <div>
+                        <h2 className="text-[#4a3f2f]/50 text-4xl">Submissions</h2>
+                        <div className="flex flex-row flex-wrap gap-5">
+                            {submissions.map(spotCard)}
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
         </div>
     )

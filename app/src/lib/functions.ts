@@ -1,19 +1,42 @@
 import { type SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "./supabase/client";
+import { getFileExt } from "./utils";
 
-export async function uploadCompletionImages(sideQuestId: string, files: File[]) {
-    const formData = new FormData();
-    formData.append('sideQuestId', sideQuestId);
-    files.forEach((file) => formData.append('files', file));
+export interface ImageUpload {
+    file: File;
+    caption?: string;
+}
 
-    // const { data, error } = await supabase.functions.invoke('uploadCompletions', {
-    //     body: formData,
-    // });
+export async function getUserProfile() {
+    const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .single();
 
-    fetch('/api/submit-completion', {
-        method: 'POST',
-        body: formData
-    });
+    if (error) throw error;
+
+    return data;
+}
+
+export async function uploadImagesForQuest(userId: string, sideQuestId: string, images: ImageUpload[]) {
+    await Promise.all(images.map(async (image) => {
+        const fileName = `${crypto.randomUUID()}.${getFileExt(image.file.name)}`;
+        
+        const { data, error } = await supabase
+            .storage
+            .from('avatar')
+            .upload(`${userId}/${fileName}`, image.file);
+    
+        if (error) throw error;
+    
+        await supabase 
+            .from('gallery')
+            .insert({
+                user_id: userId,
+                quest_id: sideQuestId,
+                caption: image.caption
+            });
+    }));
 }
 
 export async function getClosestQuests({ latitude, longitude } : { latitude: number, longitude: number }, limit: number = 5) {
@@ -67,6 +90,24 @@ export async function getPinnedImages() {
     return data ?? [];
 }
 
+export async function pinImage(imageId: string) {
+    const { data, error } = await supabase
+        .from('gallery')
+        .update({ pinned: true })
+        .eq('id', imageId);
+    
+    if (error) throw error;
+}
+
+export async function unpinImage(imageId: string) {
+    const { data, error } = await supabase
+        .from('gallery')
+        .update({ pinned: false })
+        .eq('id', imageId);
+    
+    if (error) throw error;
+}
+
 export async function submitQuestForApproval({
     title,
     description,
@@ -105,15 +146,24 @@ export async function submitQuestForApproval({
     return data;
 }
 
-export async function getSubmissions(supabase: SupabaseClient) {
+export async function updateUserAvatar(userId: string, file: File) {
+    const fileName = `${crypto.randomUUID()}.${getFileExt(file.name)}`;
+    
     const { data, error } = await supabase
-        .from("side_quests")
-        .select("*")
-        .eq("status", "pending");
+        .storage
+        .from('avatar')
+        .upload(`${userId}/${fileName}`, file);
 
     if (error) throw error;
 
-    return data;
+    const { data: userData, error: updateError } = await supabase
+        .from('users')
+        .update({ avatar_url: data.fullPath })
+        .eq('user_id', userId);
+
+    if (updateError) throw updateError;
+
+    return userData;
 }
 
 export async function seedInitialQuests() {

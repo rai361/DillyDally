@@ -1,14 +1,14 @@
 'use client';
 
-import { getBookmarkedQuests, getPinnedImages } from '@/lib';
+import { getBookmarkedQuests, getPinnedImages } from '@/lib/functions';
 import { HypeIndicator } from '@/lib/components/Indicators';
 import SectionEyebrow from '@/lib/components/SectionEyebrow';
 import useAuth from '@/lib/hooks/useAuth';
+import useProfile from '@/lib/hooks/useProfile';
 import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRef } from 'react';
-
-type Category = 'User Submitted' | 'Promoted' | 'Food!' | 'Parks';
+import { Category, GalleryImage, Spot } from '@/lib/types';
 
 const CATEGORY_BADGE_STYLES: Record<Category, string> = {
   'User Submitted': 'bg-[#6b8fb5] text-[#f5ecd9]',
@@ -24,24 +24,6 @@ const CATEGORY_ICONS: Record<Category, string> = {
   Parks: '🌳',
 };
 
-interface QuestPhoto {
-  id: string;
-  imageUrl: string;
-  caption: string;
-}
-
-interface FavoriteSpot {
-  id: string;
-  title: string;
-  category: Category;
-  hype: 1 | 2 | 3 | 4 | 5;
-  time: string;
-}
-
-// ---------------------------------------------------------------------------
-// Small pieces
-// ---------------------------------------------------------------------------
-
 function StatBlock({ value, label }: { value: number; label: string }) {
   return (
     <div className="flex flex-col items-center gap-0.5 px-5">
@@ -53,9 +35,7 @@ function StatBlock({ value, label }: { value: number; label: string }) {
   );
 }
 
-// Slight alternating tilt so the photo strip reads as pinned snapshots
-// rather than a stock gallery grid.
-function PhotoCarousel({ photos }: { photos: QuestPhoto[] }) {
+function PhotoCarousel({ photos }: { photos: GalleryImage[] }) {
   const trackRef = useRef<HTMLDivElement>(null);
 
   const scrollByAmount = (dir: 1 | -1) => {
@@ -71,7 +51,7 @@ function PhotoCarousel({ photos }: { photos: QuestPhoto[] }) {
         {photos.map((photo, idx) => (
           <figure
             key={photo.id}
-            className={`w-40 shrink-0 snap-start rounded-sm bg-[#f5ecd9] p-2 pb-4 shadow-lg transition hover:-translate-y-1 hover:shadow-xl -rotate-${idx % 2 ? 2 : 1}`}
+            className={`w-40 shrink-0 snap-start rounded-sm bg-[#f5ecd9] p-2 pb-4 shadow-lg transition hover:-translate-y-1 hover:shadow-xl ${idx % 2 ? 'rotate-2' : '-rotate-1'}`}
           >
             <img
               src={photo.imageUrl}
@@ -104,7 +84,7 @@ function PhotoCarousel({ photos }: { photos: QuestPhoto[] }) {
   );
 }
 
-function FavoriteSpotCard({ spot }: { spot: FavoriteSpot }) {
+function FavoriteSpotCard({ spot }: { spot: Spot }) {
   return (
     <Link
       href={`/?spot=${spot.id}`}
@@ -127,26 +107,34 @@ function FavoriteSpotCard({ spot }: { spot: FavoriteSpot }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
+function ProfilePicture({ avatarUrl } : { avatarUrl: string }) {
+  return (
+    <button>
+      <img
+        src={avatarUrl}
+        className="h-24 w-24 rounded-full border-4 border-[#f5ecd9] object-cover shadow-lg"
+      />
+    </button>
+  )
+}
 
 export default function DashboardPage() {
-  const { user: check, profile: user } = useAuth();
+  const { isAuthenticated } = useAuth();
+  const { profile } = useProfile();
 
   const { data: bookmarkedSpots, isPending } = useQuery({
     queryKey: ['bookmarked_spots'],
     queryFn: getBookmarkedQuests,
     retry: false
-  })
+  });
 
   const { data: pinnedPhotos, isPending: isPhotosPending } = useQuery({
     queryKey: ['pinned_photos'],
     queryFn: getPinnedImages,
     retry: false
-  })
+  });
 
-  if (!check) {
+  if (!isAuthenticated || !profile) {
     return (
       <div className="w-full flex flex-col flex-1 justify-center items-center">
         Not Logged In
@@ -164,36 +152,34 @@ export default function DashboardPage() {
       </Link>
 
       <div className="mx-auto flex max-w-xl flex-col items-center px-6 pb-16 pt-20">
-        {/* Profile */}
-        <img
-          src={user.avatarUrl}
-          className="h-24 w-24 rounded-full border-4 border-[#f5ecd9] object-cover shadow-lg"
-        />
+        
+        <ProfilePicture avatarUrl={profile.avatarUrl} />
+
         <h1 className="mt-4 text-2xl font-extrabold leading-tight text-[#4a3f2f]">
-          {user.displayName}
+          {profile.displayName}
         </h1>
         {/* <p className="text-sm font-semibold text-[#a1602a]">@{user.handle}</p> */}
         <p className="mt-3 max-w-sm text-center text-sm leading-relaxed text-[#6b5d45]">
-          {user.bio}
+          {profile.bio}
         </p>
 
         <div className="mt-5 flex items-center divide-x divide-[#4a3f2f]/10 rounded-full bg-[#f5ecd9] py-3 shadow-md">
-          <StatBlock value={user.followers} label="Ducklings" />
-          <StatBlock value={user.following} label="Admiring" />
+          <StatBlock value={profile.followers} label="Ducklings" />
+          <StatBlock value={profile.following} label="Admiring" />
         </div>
 
         {/* Pinned quest photos */}
         {!isPhotosPending && (
-          <div className="mt-12 w-full">
+          <div className="mt-12 w-full gap-3">
             <SectionEyebrow icon="📌">Pinned from quests</SectionEyebrow>
-            <PhotoCarousel photos={pinnedPhotos as QuestPhoto[]} />
+            <PhotoCarousel photos={pinnedPhotos as GalleryImage[]} />
           </div>
         )}
 
         {/* Favorite sidequests */}
         <div className="mt-10 w-full">
           <SectionEyebrow icon="⭐">Favorite sidequests</SectionEyebrow>
-          <div className="space-y-2.5">
+          <div className="space-y-2.5 mt-3">
             {/* @ts-ignore */}
             {!isPending && (bookmarkedSpots?.map((bookmark: any) => (
               <FavoriteSpotCard key={bookmark.id} spot={bookmark.side_quests} />
