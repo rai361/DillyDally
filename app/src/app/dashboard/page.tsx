@@ -1,12 +1,12 @@
 'use client';
 
+import { getBookmarkedQuests, getPinnedImages } from '@/lib';
+import { HypeIndicator } from '@/lib/components/Indicators';
+import SectionEyebrow from '@/lib/components/SectionEyebrow';
+import useAuth from '@/lib/hooks/useAuth';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRef } from 'react';
-
-// ---------------------------------------------------------------------------
-// Shared tokens (mirrors app/page.tsx — pull into a shared module if the
-// palette needs to move in both places at once)
-// ---------------------------------------------------------------------------
 
 type Category = 'User Submitted' | 'Promoted' | 'Food!' | 'Parks';
 
@@ -24,44 +24,11 @@ const CATEGORY_ICONS: Record<Category, string> = {
   Parks: '🌳',
 };
 
-// ---------------------------------------------------------------------------
-// Mock data (backend integration point)
-// ---------------------------------------------------------------------------
-// Shaped the way `GET /api/users/me` and `GET /api/users/me/favorites` would
-// eventually respond — swapping these constants for fetch calls is a
-// contained change once the endpoints exist.
-
-interface UserProfile {
-  displayName: string;
-  handle: string;
-  bio: string;
-  avatar: string;
-  followers: number;
-  following: number;
-}
-
-const CURRENT_USER: UserProfile = {
-  displayName: 'Denial Scissor',
-  handle: 'wedabestmusic',
-  bio: 'First Year Computer Engineering. Daily Minoxidil User.',
-  avatar: '/IMG_5581.jpg',
-  followers: 128,
-  following: 54,
-};
-
 interface QuestPhoto {
   id: string;
-  image: string;
+  imageUrl: string;
   caption: string;
 }
-
-const PINNED_PHOTOS: QuestPhoto[] = [
-  { id: 'p1', image: 'https://picsum.photos/seed/questphoto1/500/500', caption: 'Sunset, Philosopher\u2019s Walk' },
-  { id: 'p2', image: 'https://picsum.photos/seed/questphoto2/500/500', caption: 'First kimchi jjigae of the semester' },
-  { id: 'p3', image: 'https://picsum.photos/seed/questphoto3/500/500', caption: 'Hammock day, Queen\u2019s Park' },
-  { id: 'p4', image: 'https://picsum.photos/seed/questphoto4/500/500', caption: 'Robarts, 2am, still going' },
-  { id: 'p5', image: 'https://picsum.photos/seed/questphoto5/500/500', caption: 'Empanada run, Kensington' },
-];
 
 interface FavoriteSpot {
   id: string;
@@ -71,50 +38,9 @@ interface FavoriteSpot {
   time: string;
 }
 
-const FAVORITE_SPOTS: FavoriteSpot[] = [
-  { id: 'baldwin', title: 'Kimchi House, Baldwin St.', category: 'Food!', hype: 5, time: '~45 min' },
-  { id: 'queenspark', title: 'Queen\u2019s Park Green', category: 'Parks', hype: 4, time: '~1 hr' },
-  { id: 'harthouse', title: 'Hart House Great Hall', category: 'User Submitted', hype: 4, time: '~30 min' },
-  { id: 'kensington', title: 'Kensington Market Empanadas', category: 'User Submitted', hype: 5, time: '~30 min' },
-];
-
 // ---------------------------------------------------------------------------
 // Small pieces
 // ---------------------------------------------------------------------------
-
-function HypeIndicator({ hype }: { hype: number }) {
-  return (
-    <span className="text-sm">
-      {'🔥'.repeat(hype)}
-      <span className="opacity-20">{'🔥'.repeat(5 - hype)}</span>
-    </span>
-  );
-}
-
-function SectionEyebrow({ icon, children }: { icon: string; children: React.ReactNode }) {
-  return (
-    <div className="mb-3 flex items-center gap-2">
-      <span
-        className="h-px flex-1 opacity-40"
-        style={{
-          backgroundImage:
-            'repeating-linear-gradient(90deg, #8b5e34 0px, #8b5e34 4px, transparent 4px, transparent 9px)',
-        }}
-      />
-      <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-[#8b5e34]">
-        <span aria-hidden>{icon}</span>
-        {children}
-      </span>
-      <span
-        className="h-px flex-1 opacity-40"
-        style={{
-          backgroundImage:
-            'repeating-linear-gradient(90deg, #8b5e34 0px, #8b5e34 4px, transparent 4px, transparent 9px)',
-        }}
-      />
-    </div>
-  );
-}
 
 function StatBlock({ value, label }: { value: number; label: string }) {
   return (
@@ -129,8 +55,6 @@ function StatBlock({ value, label }: { value: number; label: string }) {
 
 // Slight alternating tilt so the photo strip reads as pinned snapshots
 // rather than a stock gallery grid.
-const PHOTO_TILT = ['-rotate-2', 'rotate-1', '-rotate-1', 'rotate-2', '-rotate-1'];
-
 function PhotoCarousel({ photos }: { photos: QuestPhoto[] }) {
   const trackRef = useRef<HTMLDivElement>(null);
 
@@ -142,17 +66,17 @@ function PhotoCarousel({ photos }: { photos: QuestPhoto[] }) {
     <div className="relative">
       <div
         ref={trackRef}
-        className="flex snap-x snap-mandatory gap-5 overflow-x-auto scroll-smooth px-1 py-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="flex snap-x snap-mandatory gap-5 overflow-x-auto scroll-smooth px-1 py-3 scrollbar-none [&::-webkit-scrollbar]:hidden"
       >
-        {photos.map((photo, i) => (
+        {photos.map((photo, idx) => (
           <figure
             key={photo.id}
-            className={`w-40 shrink-0 snap-start rounded-sm bg-[#f5ecd9] p-2 pb-4 shadow-lg transition hover:-translate-y-1 hover:shadow-xl ${PHOTO_TILT[i % PHOTO_TILT.length]}`}
+            className={`w-40 shrink-0 snap-start rounded-sm bg-[#f5ecd9] p-2 pb-4 shadow-lg transition hover:-translate-y-1 hover:shadow-xl -rotate-${idx % 2 ? 2 : 1}`}
           >
             <img
-              src={photo.image}
+              src={photo.imageUrl}
               alt={photo.caption}
-              className="h-36 w-full rounded-[2px] object-cover"
+              className="h-36 w-full rounded-xs object-cover"
             />
             <figcaption className="mt-2 text-center text-xs leading-snug text-[#6b5d45]">
               {photo.caption}
@@ -208,7 +132,27 @@ function FavoriteSpotCard({ spot }: { spot: FavoriteSpot }) {
 // ---------------------------------------------------------------------------
 
 export default function DashboardPage() {
-  const user = CURRENT_USER;
+  const { user: check, profile: user } = useAuth();
+
+  const { data: bookmarkedSpots, isPending } = useQuery({
+    queryKey: ['bookmarked_spots'],
+    queryFn: getBookmarkedQuests,
+    retry: false
+  })
+
+  const { data: pinnedPhotos, isPending: isPhotosPending } = useQuery({
+    queryKey: ['pinned_photos'],
+    queryFn: getPinnedImages,
+    retry: false
+  })
+
+  if (!check) {
+    return (
+      <div className="w-full flex flex-col flex-1 justify-center items-center">
+        Not Logged In
+      </div>
+    );
+  }
 
   return (
     <main className="min-h-screen w-screen bg-[#f0e6d2] text-[#4a3f2f]">
@@ -222,14 +166,13 @@ export default function DashboardPage() {
       <div className="mx-auto flex max-w-xl flex-col items-center px-6 pb-16 pt-20">
         {/* Profile */}
         <img
-          src={user.avatar}
-          alt={user.displayName}
+          src={user.avatarUrl}
           className="h-24 w-24 rounded-full border-4 border-[#f5ecd9] object-cover shadow-lg"
         />
         <h1 className="mt-4 text-2xl font-extrabold leading-tight text-[#4a3f2f]">
           {user.displayName}
         </h1>
-        <p className="text-sm font-semibold text-[#a1602a]">@{user.handle}</p>
+        {/* <p className="text-sm font-semibold text-[#a1602a]">@{user.handle}</p> */}
         <p className="mt-3 max-w-sm text-center text-sm leading-relaxed text-[#6b5d45]">
           {user.bio}
         </p>
@@ -240,18 +183,21 @@ export default function DashboardPage() {
         </div>
 
         {/* Pinned quest photos */}
-        <div className="mt-12 w-full">
-          <SectionEyebrow icon="📌">Pinned from quests</SectionEyebrow>
-          <PhotoCarousel photos={PINNED_PHOTOS} />
-        </div>
+        {!isPhotosPending && (
+          <div className="mt-12 w-full">
+            <SectionEyebrow icon="📌">Pinned from quests</SectionEyebrow>
+            <PhotoCarousel photos={pinnedPhotos as QuestPhoto[]} />
+          </div>
+        )}
 
         {/* Favorite sidequests */}
         <div className="mt-10 w-full">
           <SectionEyebrow icon="⭐">Favorite sidequests</SectionEyebrow>
           <div className="space-y-2.5">
-            {FAVORITE_SPOTS.map((spot) => (
-              <FavoriteSpotCard key={spot.id} spot={spot} />
-            ))}
+            {/* @ts-ignore */}
+            {!isPending && (bookmarkedSpots?.map((bookmark: any) => (
+              <FavoriteSpotCard key={bookmark.id} spot={bookmark.side_quests} />
+            )))}
           </div>
         </div>
       </div>

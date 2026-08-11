@@ -1,5 +1,9 @@
 'use client';
 
+import { getSideQuests } from '@/lib';
+import { HypeIndicator, PriceIndicator, TimeIndicator } from '@/lib/components/Indicators';
+import useAuth from '@/lib/hooks/useAuth';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
@@ -25,19 +29,12 @@ const ZoomControl = dynamic(
   { ssr: false }
 );
 
-const UTSG_COORDS: [number, number] = [43.6629, -79.3957];
+// const { MapContainer, TileLayer, Marker, Popup, ZoomControl } = dynamic(
+//   () => import('react-leaflet').then((mod) => { mod }),
+//   { ssr: false }
+// )
 
-// ---------------------------------------------------------------------------
-// Typography
-// ---------------------------------------------------------------------------
-// The site-wide default (set in globals.css / layout.tsx) is a hand-drawn
-// "crayon" display font. That's the right voice for the wordmark, tagline,
-// and spot titles — but it hurts legibility for anything functional: body
-// copy, form controls, filter chips, stats. `READABLE_FONT` explicitly opts
-// those elements back into a plain system sans stack via Tailwind's
-// `font-sans` utility, which — because it's a class, not an inherited
-// element selector — wins over the crayon font cascading down from <body>.
-const READABLE_FONT = 'font-sans';
+const UTSG_COORDS: [number, number] = [43.6629, -79.3957];
 
 // ---------------------------------------------------------------------------
 // Types
@@ -58,161 +55,25 @@ interface Spot {
   tags: string[];
 }
 
-// Shape of the filter state. This is intentionally the same shape a future
-// `GET /api/spots` endpoint would accept as query params, e.g.
-//   /api/spots?query=kimchi&categories=Food!,Parks&tags=quiet,free
+/**
+ * Backend integration point.
+ * Swap the body of this function for a real request, e.g.:
+ *   const params = new URLSearchParams({
+ *     query: filters.query,
+ *     categories: [...filters.categories].join(','),
+ *     tags: [...filters.tags].join(','),
+ *   });
+ *   const res = await fetch(`/api/spots${params}`, { signal });
+ *   return res.json();
+ * The UI only depends on this returning `Promise<Spot[]>`.
+ */
+
 interface SpotFilters {
   query: string;
   categories: Set<Category>;
   tags: Set<string>;
 }
 
-// ---------------------------------------------------------------------------
-// Mock data (backend integration point)
-// ---------------------------------------------------------------------------
-// Everything in this section is what a real backend would own. `fetchSpots`
-// is written as an async function that takes the same filter shape a REST
-// call would, so swapping the body for a `fetch('/api/spots?...')` later is
-// a one-function change — nothing in the UI below needs to know the data
-// used to be local. Likewise, `getSuggestions` stands in for a future
-// `GET /api/spots/suggest?query=` typeahead endpoint.
-//
-// Each spot also carries exactly one "company" tag — solo-friendly,
-// date-friendly, or group-friendly — alongside its other free-form tags, so
-// it plugs into the same tag-filter UI without any extra plumbing.
-
-const ALL_SPOTS: Spot[] = [
-  {
-    id: 'robarts',
-    position: [43.6644, -79.3999],
-    title: 'Robarts 13th Floor Study Nook',
-    description:
-      'Quiet corner with skyline views. Great for cramming before finals, terrible for making friends.',
-    image: 'https://picsum.photos/seed/robarts/500/350',
-    price: 1,
-    hype: 3,
-    time: '~2 hrs',
-    category: 'User Submitted',
-    tags: ['quiet', 'study', 'indoor', 'solo-friendly'],
-  },
-  {
-    id: 'harthouse',
-    position: [43.664, -79.3957],
-    title: 'Hart House Great Hall',
-    description:
-      'Gothic architecture, free events most weeks, and surprisingly good acoustics for club meetings.',
-    image: 'https://picsum.photos/seed/harthouse/500/350',
-    price: 1,
-    hype: 4,
-    time: '~30 min',
-    category: 'User Submitted',
-    tags: ['free', 'social', 'indoor', 'group-friendly'],
-  },
-  {
-    id: 'sidsmith',
-    position: [43.6633, -79.3997],
-    title: 'Sid Smith Food Court Bowls',
-    description:
-      'Reliable grain bowls between classes. Gets slammed at noon, so go early or go hungry.',
-    image: 'https://picsum.photos/seed/sidsmith/500/350',
-    price: 2,
-    hype: 3,
-    time: '~20 min',
-    category: 'Food!',
-    tags: ['quick', 'vegetarian-friendly', 'solo-friendly'],
-  },
-  {
-    id: 'baldwin',
-    position: [43.6595, -79.4005],
-    title: 'Kimchi House, Baldwin St.',
-    description:
-      'Small, cash-friendly, and consistently the best kimchi jjigae within walking distance of campus.',
-    image: 'https://picsum.photos/seed/baldwin/500/350',
-    price: 2,
-    hype: 5,
-    time: '~45 min',
-    category: 'Food!',
-    tags: ['cash-only', 'spicy', 'sit-down', 'date-friendly'],
-  },
-  {
-    id: 'secondcup',
-    position: [43.6598, -79.3977],
-    title: 'Second Cup on College',
-    description:
-      'Sponsored spot — 10% off with your student card this month. Solid wifi, mediocre lattes.',
-    image: 'https://picsum.photos/seed/secondcup/500/350',
-    price: 2,
-    hype: 2,
-    time: '~15 min',
-    category: 'Promoted',
-    tags: ['study', 'wifi', 'discount', 'solo-friendly'],
-  },
-  {
-    id: 'newcollege',
-    position: [43.6656, -79.4012],
-    title: 'New College Dining Hall Wings Night',
-    description:
-      'Sponsored by Res Life — Thursday wings night is a whole event, bring your meal card.',
-    image: 'https://picsum.photos/seed/newcollege/500/350',
-    price: 3,
-    hype: 4,
-    time: '~1 hr',
-    category: 'Promoted',
-    tags: ['social', 'sit-down', 'group-friendly'],
-  },
-  {
-    id: 'philosopherswalk',
-    position: [43.6672, -79.3986],
-    title: "Philosopher's Walk",
-    description:
-      'Tree-lined path tucked behind the ROM. Best 15-minute reset between back-to-back lectures.',
-    image: 'https://picsum.photos/seed/philosopherswalk/500/350',
-    price: 1,
-    hype: 4,
-    time: '~15 min',
-    category: 'Parks',
-    tags: ['free', 'quiet', 'outdoor', 'date-friendly'],
-  },
-  {
-    id: 'queenspark',
-    position: [43.6619, -79.3912],
-    title: 'Queen\u2019s Park Green',
-    description:
-      'Open lawn across from the legislature. Frisbee at noon, hammocks by 4pm most sunny days.',
-    image: 'https://picsum.photos/seed/queenspark/500/350',
-    price: 1,
-    hype: 4,
-    time: '~1 hr',
-    category: 'Parks',
-    tags: ['free', 'social', 'outdoor', 'group-friendly'],
-  },
-  {
-    id: 'taddlecreek',
-    position: [43.6611, -79.3975],
-    title: 'Taddle Creek Trail Marker',
-    description:
-      'A buried creek daylighted in a small park pocket. Easy to miss, worth the two-minute detour.',
-    image: 'https://picsum.photos/seed/taddlecreek/500/350',
-    price: 1,
-    hype: 2,
-    time: '~10 min',
-    category: 'Parks',
-    tags: ['quiet', 'outdoor', 'hidden-gem', 'solo-friendly'],
-  },
-  {
-    id: 'kensington',
-    position: [43.6547, -79.4005],
-    title: 'Kensington Market Empanadas',
-    description:
-      'Community-submitted find — cheap, filling, and a solid excuse to wander the market after class.',
-    image: 'https://picsum.photos/seed/kensington/500/350',
-    price: 1,
-    hype: 5,
-    time: '~30 min',
-    category: 'User Submitted',
-    tags: ['cash-only', 'quick', 'hidden-gem', 'date-friendly'],
-  },
-];
 
 function matchesQuery(spot: Spot, query: string): boolean {
   if (!query.trim()) return true;
@@ -225,61 +86,18 @@ function matchesQuery(spot: Spot, query: string): boolean {
   );
 }
 
-/**
- * Backend integration point.
- * Swap the body of this function for a real request, e.g.:
- *   const params = new URLSearchParams({
- *     query: filters.query,
- *     categories: [...filters.categories].join(','),
- *     tags: [...filters.tags].join(','),
- *   });
- *   const res = await fetch(`/api/spots?${params}`, { signal });
- *   return res.json();
- * The UI only depends on this returning `Promise<Spot[]>`.
- */
 async function fetchSpots(filters: SpotFilters, signal?: AbortSignal): Promise<Spot[]> {
+  const ALL_SPOTS = await getSideQuests();
+
   await new Promise((resolve) => setTimeout(resolve, 220));
   if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
   return ALL_SPOTS.filter(
     (spot) =>
       filters.categories.has(spot.category) &&
+      // @ts-ignore
       (filters.tags.size === 0 || spot.tags.some((tag) => filters.tags.has(tag))) &&
       matchesQuery(spot, filters.query)
   );
-}
-
-type Suggestion =
-  | { type: 'spot'; label: string; spot: Spot }
-  | { type: 'tag'; label: string };
-
-/**
- * Backend integration point: stands in for `GET /api/spots/suggest?query=`.
- * Kept synchronous-fast on purpose (typeahead should never feel like it's
- * waiting on a spinner) — a real endpoint would want to be called with the
- * same debounce this is invoked with from the sidebar.
- */
-function getSuggestions(query: string): Suggestion[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
-
-  const spotMatches: Suggestion[] = ALL_SPOTS.filter((s) =>
-    s.title.toLowerCase().includes(q)
-  )
-    .slice(0, 4)
-    .map((s) => ({ type: 'spot', label: s.title, spot: s }));
-
-  const seenTags = new Set<string>();
-  const tagMatches: Suggestion[] = [];
-  for (const spot of ALL_SPOTS) {
-    for (const tag of spot.tags) {
-      if (tag.includes(q) && !seenTags.has(tag)) {
-        seenTags.add(tag);
-        tagMatches.push({ type: 'tag', label: tag });
-      }
-    }
-  }
-
-  return [...spotMatches, ...tagMatches].slice(0, 6);
 }
 
 // ---------------------------------------------------------------------------
@@ -309,37 +127,10 @@ const CATEGORY_ICONS: Record<Category, string> = {
 
 const ALL_CATEGORIES: Category[] = ['Food!', 'Parks', 'User Submitted', 'Promoted'];
 
-function PriceIndicator({ price, size = 'sm' }: { price: number; size?: 'sm' | 'lg' }) {
-  const textSize = size === 'lg' ? 'text-xl' : 'text-base';
-  return (
-    <span className={`${textSize} ${READABLE_FONT} font-bold tracking-tight text-[#3f7a4e]`}>
-      {'$'.repeat(price)}
-      <span className="text-[#3f7a4e]/25">{'$'.repeat(4 - price)}</span>
-    </span>
-  );
-}
-
-function HypeIndicator({ hype, size = 'sm' }: { hype: number; size?: 'sm' | 'lg' }) {
-  const textSize = size === 'lg' ? 'text-xl' : 'text-base';
-  return (
-    <span className={textSize}>
-      {'🔥'.repeat(hype)}
-      <span className="opacity-20">{'🔥'.repeat(5 - hype)}</span>
-    </span>
-  );
-}
-
-function TimeIndicator({ time, size = 'sm' }: { time: string; size?: 'sm' | 'lg' }) {
-  const textSize = size === 'lg' ? 'text-lg' : 'text-sm';
-  return (
-    <span className={`${textSize} ${READABLE_FONT} font-semibold text-[#3d6ea1]`}>⏱️ {time}</span>
-  );
-}
-
 function CategoryBadge({ category }: { category: Category }) {
   return (
     <span
-      className={`inline-block rounded-full px-2.5 py-1 text-xs ${READABLE_FONT} font-semibold uppercase tracking-wide ${CATEGORY_BADGE_STYLES[category]}`}
+      className={`inline-block rounded-full px-2.5 py-1 text-xs readable-font font-semibold uppercase tracking-wide ${CATEGORY_BADGE_STYLES[category]}`}
     >
       {CATEGORY_ICONS[category]} {category}
     </span>
@@ -348,7 +139,7 @@ function CategoryBadge({ category }: { category: Category }) {
 
 function TagPill({ tag }: { tag: string }) {
   return (
-    <span className={`inline-block rounded-full border border-[#4a3f2f]/15 bg-[#4a3f2f]/5 px-2.5 py-1 text-xs ${READABLE_FONT} font-medium text-[#6b5d45]`}>
+    <span className={`inline-block rounded-full border border-[#4a3f2f]/15 bg-[#4a3f2f]/5 px-2.5 py-1 text-xs readable-font font-medium text-[#6b5d45]`}>
       #{tag}
     </span>
   );
@@ -371,7 +162,7 @@ function SpotCard({ spot, onExpand }: { spot: Spot; onExpand: (spot: Spot) => vo
           <HypeIndicator hype={spot.hype} />
         </div>
         <TimeIndicator time={spot.time} />
-        <div className={`pt-0.5 text-xs ${READABLE_FONT} font-medium text-[#a1602a]`}>
+        <div className={`pt-0.5 text-xs readable-font font-medium text-[#a1602a]`}>
           Tap to see more →
         </div>
       </div>
@@ -404,7 +195,7 @@ function ExpandedWidget({ spot, onClose }: { spot: Spot; onClose: () => void }) 
           <h2 className="text-2xl font-extrabold leading-tight text-[#4a3f2f]">
             {spot.title}
           </h2>
-          <p className={`text-base ${READABLE_FONT} leading-relaxed text-[#5c4f3a]`}>{spot.description}</p>
+          <p className={`text-base readable-font leading-relaxed text-[#5c4f3a]`}>{spot.description}</p>
           <div className="flex flex-wrap gap-1.5">
             {spot.tags.map((tag) => (
               <TagPill key={tag} tag={tag} />
@@ -412,19 +203,19 @@ function ExpandedWidget({ spot, onClose }: { spot: Spot; onClose: () => void }) 
           </div>
           <div className="flex items-center justify-between border-t border-[#4a3f2f]/10 pt-3">
             <div className="flex flex-col items-start gap-1">
-              <span className={`text-xs ${READABLE_FONT} font-semibold uppercase text-[#4a3f2f]/50`}>
+              <span className={`text-xs readable-font font-semibold uppercase text-[#4a3f2f]/50`}>
                 Price
               </span>
               <PriceIndicator price={spot.price} size="lg" />
             </div>
             <div className="flex flex-col items-start gap-1">
-              <span className={`text-xs ${READABLE_FONT} font-semibold uppercase text-[#4a3f2f]/50`}>
+              <span className={`text-xs readable-font font-semibold uppercase text-[#4a3f2f]/50`}>
                 Hype
               </span>
               <HypeIndicator hype={spot.hype} size="lg" />
             </div>
             <div className="flex flex-col items-start gap-1">
-              <span className={`text-xs ${READABLE_FONT} font-semibold uppercase text-[#4a3f2f]/50`}>
+              <span className={`text-xs readable-font font-semibold uppercase text-[#4a3f2f]/50`}>
                 Time
               </span>
               <TimeIndicator time={spot.time} size="lg" />
@@ -440,7 +231,36 @@ function ExpandedWidget({ spot, onClose }: { spot: Spot; onClose: () => void }) 
 // Sidebar — styled like a trailhead signpost / park field guide
 // ---------------------------------------------------------------------------
 
+type Suggestion =
+  | { type: 'spot'; label: string; spot: Spot }
+  | { type: 'tag'; label: string };
+
+function getSuggestions(query: string, spots: any): Suggestion[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+
+  const spotMatches: Suggestion[] = spots.filter((s: any) =>
+    s.title.toLowerCase().includes(q)
+  )
+    .slice(0, 4)
+    .map((s: any) => ({ type: 'spot', label: s.title, spot: s }));
+
+  const seenTags = new Set<string>();
+  const tagMatches: Suggestion[] = [];
+  for (const spot of spots) {
+    for (const tag of spot.tags) {
+      if (tag.includes(q) && !seenTags.has(tag)) {
+        seenTags.add(tag);
+        tagMatches.push({ type: 'tag', label: tag });
+      }
+    }
+  }
+
+  return [...spotMatches, ...tagMatches].slice(0, 6);
+}
+
 function Sidebar({
+  spots,
   open,
   onClose,
   query,
@@ -455,6 +275,7 @@ function Sidebar({
   resultCount,
   onClearAll,
 }: {
+  spots: any,
   open: boolean;
   onClose: () => void;
   query: string;
@@ -472,7 +293,7 @@ function Sidebar({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
 
-  const suggestions = useMemo(() => getSuggestions(query), [query]);
+  const suggestions = useMemo(() => getSuggestions(query, spots), [query, spots]);
 
   const activeFilterCount =
     (ALL_CATEGORIES.length - activeCategories.size) + activeTags.size + (query.trim() ? 1 : 0);
@@ -588,7 +409,7 @@ function Sidebar({
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleSuggestionPick(s)}
                       onMouseEnter={() => setHighlighted(i)}
-                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${READABLE_FONT} transition ${
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm readable-font transition ${
                         i === highlighted ? 'bg-[#a1602a]/15' : ''
                       }`}
                     >
@@ -618,12 +439,12 @@ function Sidebar({
             <div className="space-y-1.5">
               {ALL_CATEGORIES.map((category) => {
                 const active = activeCategories.has(category);
-                const count = ALL_SPOTS.filter((s) => s.category === category).length;
+                const count = spots.filter((s: any) => s.category === category).length;
                 return (
                   <button
                     key={category}
                     onClick={() => onToggleCategory(category)}
-                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-base ${READABLE_FONT} font-semibold transition ${
+                    className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-base readable-font font-semibold transition ${
                       active
                         ? CATEGORY_BADGE_STYLES[category]
                         : 'bg-[#4a3f2f]/5 text-[#4a3f2f]/40'
@@ -645,7 +466,7 @@ function Sidebar({
               Tags
             </span>
             {availableTags.length === 0 ? (
-              <p className={`text-sm ${READABLE_FONT} text-[#6b5d45]`}>No tags for the categories selected.</p>
+              <p className={`text-sm readable-font text-[#6b5d45]`}>No tags for the categories selected.</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {availableTags.map((tag) => {
@@ -654,7 +475,7 @@ function Sidebar({
                     <button
                       key={tag}
                       onClick={() => onToggleTag(tag)}
-                      className={`rounded-full border px-2.5 py-1 text-sm ${READABLE_FONT} font-medium transition ${
+                      className={`rounded-full border px-2.5 py-1 text-sm readable-font font-medium transition ${
                         active
                           ? 'border-[#a1602a] bg-[#a1602a] text-[#f5ecd9]'
                           : 'border-[#4a3f2f]/15 bg-transparent text-[#6b5d45] hover:border-[#4a3f2f]/30'
@@ -671,13 +492,13 @@ function Sidebar({
 
         {/* Footer */}
         <div className="flex shrink-0 items-center justify-between border-t border-[#4a3f2f]/10 bg-[#4a3f2f]/5 px-4 py-3">
-          <span className={`text-sm ${READABLE_FONT} font-medium text-[#6b5d45]`}>
+          <span className={`text-sm readable-font font-medium text-[#6b5d45]`}>
             {resultCount} spot{resultCount === 1 ? '' : 's'}
           </span>
           {activeFilterCount > 0 && (
             <button
               onClick={onClearAll}
-              className={`text-sm ${READABLE_FONT} font-semibold text-[#a1602a] hover:underline`}
+              className={`text-sm readable-font font-semibold text-[#a1602a] hover:underline`}
             >
               Clear filters
             </button>
@@ -688,11 +509,36 @@ function Sidebar({
   );
 }
 
+function AccountPill() {
+  const { user, profile } = useAuth();
+
+  return (
+      <Link
+        href="/dashboard"
+        className="absolute right-4 top-4 z-500 flex items-center gap-2 rounded-full bg-[#f5ecd9] px-2.5 py-2 shadow-lg transition hover:brightness-95"
+      >
+        {/* @ts-ignore */}
+        {profile?.avatarUrl ? (
+            <img
+              // @ts-ignore
+              src={profile.avatarUrl}
+              className="flex h-7 w-7 items-center justify-center rounded-full"
+            />
+        ) : (
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#a1602a] text-sm readable-font font-bold text-[#f5ecd9]">
+            U
+          </span>
+        )}
+        <span className={`pr-1 text-sm readable-font font-semibold text-[#4a3f2f]`}>{profile?.displayName ?? "Account"}</span>
+      </Link>
+  )
+}
+
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
-export default function Page() {
+export default function DillyDallyPage() {
   const [selectedSpot, setSelectedSpot] = useState<Spot | null>(null);
   const [icons, setIcons] = useState<Record<Category, any> | null>(null);
 
@@ -701,10 +547,18 @@ export default function Page() {
   const [activeCategories, setActiveCategories] = useState<Set<Category>>(
     new Set(ALL_CATEGORIES)
   );
+
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set());
 
-  const [spots, setSpots] = useState<Spot[]>(ALL_SPOTS);
-  const [loading, setLoading] = useState(false);
+  // const [spots, setSpots] = useState<Spot[]>(ALL_SPOTS);
+
+  let { data: spots, isPending } = useQuery({
+    queryKey: ['spots'],
+    queryFn: getSideQuests,
+    initialData: []
+  });
+
+  console.log(spots);
 
   useEffect(() => {
     import('./leaflet-icon-fix');
@@ -735,30 +589,13 @@ export default function Page() {
     });
   }, []);
 
-  // Re-run the (mock, soon-to-be-real) fetch whenever filters change.
-  useEffect(() => {
-    const controller = new AbortController();
-    setLoading(true);
-    fetchSpots({ query, categories: activeCategories, tags: activeTags }, controller.signal)
-      .then((result) => {
-        if (!controller.signal.aborted) {
-          setSpots(result);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        if (err.name !== 'AbortError') setLoading(false);
-      });
-    return () => controller.abort();
-  }, [query, activeCategories, activeTags]);
-
   const availableTags = useMemo(() => {
     const tagSet = new Set<string>();
-    ALL_SPOTS.filter((s) => activeCategories.has(s.category)).forEach((s) =>
-      s.tags.forEach((t) => tagSet.add(t))
+    spots.filter((s: any) => activeCategories.has(s.category)).forEach((s) =>
+      s.tags.forEach((t: any) => tagSet.add(t))
     );
     return Array.from(tagSet).sort();
-  }, [activeCategories]);
+  }, [activeCategories, spots]);
 
   const toggleCategory = (category: Category) => {
     setActiveCategories((prev) => {
@@ -773,7 +610,7 @@ export default function Page() {
     });
     setActiveTags((prev) => {
       const stillValid = new Set(
-        ALL_SPOTS.filter((s) => activeCategories.has(s.category) || s.category === category)
+        spots.filter((s) => activeCategories.has(s.category) || s.category === category)
           .flatMap((s) => s.tags)
       );
       return new Set([...prev].filter((t) => stillValid.has(t)));
@@ -801,6 +638,7 @@ export default function Page() {
   return (
     <main className="relative flex h-screen w-screen bg-[#f0e6d2]">
       <Sidebar
+        spots={spots}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         query={query}
@@ -850,10 +688,11 @@ export default function Page() {
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
             url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
           />
+          
           <ZoomControl position="bottomright" />
           {icons &&
             spots.map((spot) => (
-              <Marker key={spot.id} position={spot.position} icon={icons[spot.category]}>
+              <Marker key={spot.id} position={spot.position} icon={icons[spot.category as Category]}>
                 <Popup>
                   <SpotCard spot={spot} onExpand={setSelectedSpot} />
                 </Popup>
@@ -864,32 +703,23 @@ export default function Page() {
         {/* Mobile menu toggle */}
         <button
           onClick={() => setSidebarOpen(true)}
-          className={`absolute left-4 top-4 z-[500] flex items-center gap-1.5 rounded-full bg-[#f5ecd9] px-3 py-2 text-sm ${READABLE_FONT} font-semibold text-[#4a3f2f] shadow-lg sm:hidden`}
+          className={`absolute left-4 top-4 z-[500] flex items-center gap-1.5 rounded-full bg-[#f5ecd9] px-3 py-2 text-sm readable-font font-semibold text-[#4a3f2f] shadow-lg sm:hidden`}
         >
           ☰ Explore
         </button>
 
-        {/* Account section, top-right */}
-        <Link
-          href="/dashboard"
-          className="absolute right-4 top-4 z-[500] flex items-center gap-2 rounded-full bg-[#f5ecd9] px-2.5 py-2 shadow-lg transition hover:brightness-95"
-        >
-          <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-[#a1602a] text-sm ${READABLE_FONT} font-bold text-[#f5ecd9]`}>
-            U
-          </span>
-          <span className={`pr-1 text-sm ${READABLE_FONT} font-semibold text-[#4a3f2f]`}>Account</span>
-        </Link>
+        <AccountPill />
 
-        {loading && (
-          <div className={`absolute right-4 top-16 z-[500] rounded-full bg-[#f5ecd9] px-3 py-1.5 text-sm ${READABLE_FONT} font-semibold text-[#6b5d45] shadow-md`}>
+        {isPending && (
+          <div className={`absolute right-4 top-16 z-[500] rounded-full bg-[#f5ecd9] px-3 py-1.5 text-sm readable-font font-semibold text-[#6b5d45] shadow-md`}>
             Searching…
           </div>
         )}
 
-        {!loading && spots.length === 0 && (
+        {!isPending && spots.length === 0 && (
           <div className="absolute bottom-6 left-1/2 z-[500] w-[90%] max-w-sm -translate-x-1/2 rounded-2xl bg-[#f5ecd9] p-4 text-center shadow-lg">
-            <p className={`text-base ${READABLE_FONT} font-semibold text-[#4a3f2f]`}>No sidequests match yet.</p>
-            <p className={`mt-1 text-sm ${READABLE_FONT} text-[#6b5d45]`}>
+            <p className={`text-base readable-font font-semibold text-[#4a3f2f]`}>No sidequests match yet.</p>
+            <p className={`mt-1 text-sm readable-font text-[#6b5d45]`}>
               Try clearing a tag or category filter.
             </p>
           </div>

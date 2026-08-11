@@ -17,3 +17,7 @@ export async function generateNonce(): Promise<string[]> {
 
     return [nonce, hashed];
 }
+
+export function getFileExt(fileName: string): string {
+    return fileName.substring(fileName.lastIndexOf('.') + 1);
+}
