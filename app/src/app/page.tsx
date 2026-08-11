@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const MapContainer = dynamic(
   () => import('react-leaflet').then((mod) => mod.MapContainer),
@@ -65,6 +65,136 @@ interface SpotFilters {
   query: string;
   categories: Set<Category>;
   tags: Set<string>;
+}
+
+// ---------------------------------------------------------------------------
+// Quest completions, points, favorites, bookmarks
+// ---------------------------------------------------------------------------
+// Quests can be logged as "completed" any number of times — a repeat trip
+// still counts, as long as a fresh photo comes with it. Each log entry is
+// immutable once saved and carries the points it earned at that moment, so
+// changing the points formula later never rewrites anyone's history.
+//
+// "Featuring" a spot on your profile is a property of the *spot*, not of
+// any one completion — you don't re-feature it every time you go back — so
+// it lives in its own set, separate from the completion log. Bookmarks work
+// the same way and stay private (never surfaced on the profile).
+//
+// All four are local-only for now via localStorage, shaped so they can
+// become real API calls without touching the components that read/write
+// them:
+//   completions -> POST   /api/users/me/quests/:spotId/completions
+//   favorites   -> PUT/DELETE /api/users/me/favorites/:spotId
+//   bookmarks   -> PUT/DELETE /api/users/me/bookmarks/:spotId
+// The dashboard reads the same `dillydally:completions` /
+// `dillydally:favorites` keys to populate the pinned-photos carousel,
+// favorite-sidequests list, and total points.
+
+interface CompletionEntry {
+  id: string;
+  rating: number; // 0 (unrated) – 5
+  notes: string;
+  photos: string[]; // base64 data URLs for now, at least one is required
+  points: number;
+  completedAt: string; // ISO date
+}
+
+type CompletionMap = Record<string, CompletionEntry[]>;
+
+const COMPLETIONS_KEY = 'dillydally:completions';
+const BOOKMARKS_KEY = 'dillydally:bookmarks';
+const FAVORITES_KEY = 'dillydally:favorites';
+
+// Defensive: an earlier version of this app stored one Completion object
+// per spot instead of an array of entries. This normalizes whatever is in
+// localStorage into the current shape so a stale/mismatched schema (or
+// hand-edited data) can't crash the page — unrecognized shapes are just
+// dropped rather than thrown.
+function sanitizeCompletions(raw: unknown): CompletionMap {
+  if (!raw || typeof raw !== 'object') return {};
+  const result: CompletionMap = {};
+
+  const toEntry = (value: unknown): CompletionEntry | null => {
+    if (!value || typeof value !== 'object') return null;
+    const v = value as Record<string, unknown>;
+    if (typeof v.completedAt !== 'string') return null;
+    return {
+      id: typeof v.id === 'string' ? v.id : generateId(),
+      rating: typeof v.rating === 'number' ? v.rating : 0,
+      notes: typeof v.notes === 'string' ? v.notes : '',
+      photos: Array.isArray(v.photos) ? (v.photos as string[]) : [],
+      points: typeof v.points === 'number' ? v.points : 0,
+      completedAt: v.completedAt,
+    };
+  };
+
+  for (const [spotId, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (Array.isArray(value)) {
+      const entries = value.map(toEntry).filter((e): e is CompletionEntry => e !== null);
+      if (entries.length > 0) result[spotId] = entries;
+    } else {
+      // Legacy single-completion-per-spot shape.
+      const entry = toEntry(value);
+      if (entry) result[spotId] = [entry];
+    }
+  }
+
+  return result;
+}
+
+function loadCompletions(): CompletionMap {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(COMPLETIONS_KEY);
+    return raw ? sanitizeCompletions(JSON.parse(raw)) : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistCompletions(map: CompletionMap) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(COMPLETIONS_KEY, JSON.stringify(map));
+}
+
+function loadIdSet(key: string): Set<string> {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function persistIdSet(key: string, ids: Set<string>) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(key, JSON.stringify([...ids]));
+}
+
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function formatDate(iso: string): string {
+  try {
+    return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  } catch {
+    return '';
+  }
+}
+
+// Points scale with a spot's hype rating — flashier, more sought-after
+// spots are worth more. See note above on why this isn't retroactive.
+function pointsForSpot(spot: Spot): number {
+  return spot.hype * 10;
+}
+
+function totalPointsFrom(map: CompletionMap): number {
+  return Object.values(map).reduce(
+    (sum, entries) => sum + entries.reduce((s, e) => s + e.points, 0),
+    0
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -354,32 +484,98 @@ function TagPill({ tag }: { tag: string }) {
   );
 }
 
-function SpotCard({ spot, onExpand }: { spot: Spot; onExpand: (spot: Spot) => void }) {
+// ---------------------------------------------------------------------------
+// Spot card — used inside map popups
+// ---------------------------------------------------------------------------
+
+function SpotCard({
+  spot,
+  onExpand,
+  completedCount,
+  isBookmarked,
+  onToggleBookmark,
+}: {
+  spot: Spot;
+  onExpand: (spot: Spot) => void;
+  completedCount: number;
+  isBookmarked: boolean;
+  onToggleBookmark: () => void;
+}) {
   return (
-    <button
-      onClick={() => onExpand(spot)}
-      className="block w-56 cursor-pointer overflow-hidden rounded-lg bg-[#f5ecd9] text-left text-[#4a3f2f] transition hover:brightness-95"
-    >
-      <img src={spot.image} alt={spot.title} className="h-28 w-full object-cover" />
-      <div className="space-y-1.5 p-2.5">
-        <CategoryBadge category={spot.category} />
-        {/* Title keeps the crayon display font — this is exactly the kind
-            of playful, hand-lettered "trail sign" moment it's meant for. */}
-        <h3 className="text-base font-bold leading-tight text-[#4a3f2f]">{spot.title}</h3>
-        <div className="flex items-center justify-between text-sm">
-          <PriceIndicator price={spot.price} />
-          <HypeIndicator hype={spot.hype} />
+    <div className="relative w-56 overflow-hidden rounded-lg bg-[#f5ecd9] text-[#4a3f2f]">
+      <button
+        onClick={() => onExpand(spot)}
+        className="block w-full cursor-pointer text-left transition hover:brightness-95"
+      >
+        <div className="relative">
+          <img src={spot.image} alt={spot.title} className="h-28 w-full object-cover" />
+          {completedCount > 0 && (
+            <span className="absolute left-2 top-2 flex h-6 min-w-[1.5rem] items-center justify-center rounded-full bg-[#3f7a4e] px-1.5 text-xs font-bold text-[#f5ecd9] shadow">
+              {completedCount > 1 ? `${completedCount}×` : '✓'}
+            </span>
+          )}
         </div>
-        <TimeIndicator time={spot.time} />
-        <div className={`pt-0.5 text-xs ${READABLE_FONT} font-medium text-[#a1602a]`}>
-          Tap to see more →
+        <div className="space-y-1.5 p-2.5">
+          <CategoryBadge category={spot.category} />
+          {/* Title keeps the crayon display font — this is exactly the kind
+              of playful, hand-lettered "trail sign" moment it's meant for. */}
+          <h3 className="text-base font-bold leading-tight text-[#4a3f2f]">{spot.title}</h3>
+          <div className="flex items-center justify-between text-sm">
+            <PriceIndicator price={spot.price} />
+            <HypeIndicator hype={spot.hype} />
+          </div>
+          <TimeIndicator time={spot.time} />
+          <div className={`pt-0.5 text-xs ${READABLE_FONT} font-medium text-[#a1602a]`}>
+            Tap to see more →
+          </div>
         </div>
-      </div>
-    </button>
+      </button>
+
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onToggleBookmark();
+        }}
+        aria-label={isBookmarked ? 'Remove bookmark' : 'Save for later'}
+        className={`absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-sm shadow-md transition ${
+          isBookmarked ? 'bg-[#a1602a] text-[#f5ecd9]' : 'bg-[#f5ecd9]/90 text-[#4a3f2f]/60 hover:text-[#4a3f2f]'
+        }`}
+      >
+        {isBookmarked ? '🔖' : '📑'}
+      </button>
+    </div>
   );
 }
 
-function ExpandedWidget({ spot, onClose }: { spot: Spot; onClose: () => void }) {
+// ---------------------------------------------------------------------------
+// Expanded spot detail
+// ---------------------------------------------------------------------------
+
+function ExpandedWidget({
+  spot,
+  entries,
+  isFavorited,
+  onToggleFavorite,
+  isBookmarked,
+  onToggleBookmark,
+  onLogCompletion,
+  onClose,
+}: {
+  spot: Spot;
+  entries: CompletionEntry[];
+  isFavorited: boolean;
+  onToggleFavorite: () => void;
+  isBookmarked: boolean;
+  onToggleBookmark: () => void;
+  onLogCompletion: () => void;
+  onClose: () => void;
+}) {
+  const sortedEntries = [...entries].sort(
+    (a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
+  );
+  const completedCount = entries.length;
+  const totalSpotPoints = entries.reduce((sum, e) => sum + e.points, 0);
+
   return (
     <div
       className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/40 p-4"
@@ -393,12 +589,12 @@ function ExpandedWidget({ spot, onClose }: { spot: Spot; onClose: () => void }) 
           <img src={spot.image} alt={spot.title} className="h-64 w-full object-cover" />
           <button
             onClick={onClose}
-            className={`absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#4a3f2f]/80 text-lg font-bold text-[#f5ecd9] hover:bg-[#4a3f2f]`}
+            className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#4a3f2f]/80 text-lg font-bold text-[#f5ecd9] hover:bg-[#4a3f2f]"
           >
             ×
           </button>
         </div>
-        <div className="space-y-3 p-5">
+        <div className="max-h-[65vh] space-y-3 overflow-y-auto p-5">
           <CategoryBadge category={spot.category} />
           {/* Title keeps the crayon display font, matching the card. */}
           <h2 className="text-2xl font-extrabold leading-tight text-[#4a3f2f]">
@@ -430,6 +626,256 @@ function ExpandedWidget({ spot, onClose }: { spot: Spot; onClose: () => void }) 
               <TimeIndicator time={spot.time} size="lg" />
             </div>
           </div>
+
+          {completedCount > 0 && (
+            <div className={`flex items-center gap-2 rounded-lg bg-[#3f7a4e]/10 px-3 py-2 text-xs ${READABLE_FONT} font-semibold text-[#3f7a4e]`}>
+              <span>
+                Completed {completedCount}× · {totalSpotPoints} pts earned
+              </span>
+              {isFavorited && <span className="ml-auto text-[#c9a13b]">⭐ Featured</span>}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              onClick={onToggleBookmark}
+              aria-label={isBookmarked ? 'Remove bookmark' : 'Save for later'}
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg shadow-md transition ${
+                isBookmarked ? 'bg-[#a1602a] text-[#f5ecd9]' : 'bg-[#4a3f2f]/5 text-[#4a3f2f]/60 hover:bg-[#4a3f2f]/10'
+              }`}
+            >
+              {isBookmarked ? '🔖' : '📑'}
+            </button>
+            <button
+              onClick={onToggleFavorite}
+              aria-label={isFavorited ? 'Remove from profile' : 'Feature on profile'}
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg shadow-md transition ${
+                isFavorited ? 'bg-[#c9a13b] text-[#f5ecd9]' : 'bg-[#4a3f2f]/5 text-[#4a3f2f]/60 hover:bg-[#4a3f2f]/10'
+              }`}
+            >
+              ⭐
+            </button>
+            <button
+              onClick={onLogCompletion}
+              className={`flex-1 rounded-full bg-[#3f7a4e] px-4 py-3 text-lg font-bold text-[#f5ecd9] shadow-md transition hover:brightness-95`}
+            >
+              {completedCount > 0 ? 'Log again' : 'Mark as completed'}
+            </button>
+          </div>
+          <p className={`text-center text-[11px] ${READABLE_FONT} text-[#4a3f2f]/40`}>
+            Bookmarks stay private. Featuring adds this spot to your public profile.
+          </p>
+
+          {sortedEntries.length > 0 && (
+            <div className="space-y-2 border-t border-[#4a3f2f]/10 pt-3">
+              <p className={`text-xs ${READABLE_FONT} font-semibold uppercase tracking-wide text-[#4a3f2f]/50`}>
+                Your log ({sortedEntries.length})
+              </p>
+              <div className="max-h-40 space-y-2 overflow-y-auto pr-1">
+                {sortedEntries.map((entry) => (
+                  <div key={entry.id} className="flex items-center gap-2 rounded-lg bg-[#4a3f2f]/5 p-2">
+                    {entry.photos[0] && (
+                      <img src={entry.photos[0]} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className={`truncate text-xs ${READABLE_FONT} font-semibold text-[#4a3f2f]`}>
+                        {formatDate(entry.completedAt)} · +{entry.points} pts
+                      </p>
+                      {entry.notes && (
+                        <p className={`truncate text-[11px] ${READABLE_FONT} text-[#6b5d45]`}>{entry.notes}</p>
+                      )}
+                    </div>
+                    {entry.rating > 0 && (
+                      <span className="shrink-0 text-xs text-[#c9a13b]">{'★'.repeat(entry.rating)}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Completion modal — logged each time a quest is completed
+// ---------------------------------------------------------------------------
+// Kept deliberately plain: a rating, an optional note, a required photo,
+// and a live points preview. No mascots, no vibe-check emoji grid — just a
+// short form.
+
+function StarRating({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  return (
+    <div className="flex items-center gap-1">
+      {[1, 2, 3, 4, 5].map((n) => (
+        <button
+          key={n}
+          type="button"
+          onClick={() => onChange(n === value ? 0 : n)}
+          aria-label={`${n} star${n === 1 ? '' : 's'}`}
+          className="text-2xl leading-none transition hover:scale-110"
+        >
+          <span className={n <= value ? 'text-[#c9a13b]' : 'text-[#4a3f2f]/20'}>★</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CompletionModal({
+  spot,
+  onClose,
+  onSubmit,
+}: {
+  spot: Spot;
+  onClose: () => void;
+  onSubmit: (entry: CompletionEntry) => void;
+}) {
+  const [rating, setRating] = useState(0);
+  const [notes, setNotes] = useState('');
+  const [photos, setPhotos] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const points = pointsForSpot(spot);
+  const canSubmit = photos.length > 0;
+
+  const handleFiles = (files: FileList | null) => {
+    if (!files) return;
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          setPhotos((prev) => [...prev, reader.result as string]);
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+    onSubmit({
+      id: generateId(),
+      rating,
+      notes: notes.trim(),
+      photos,
+      points,
+      completedAt: new Date().toISOString(),
+    });
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/50 p-4"
+      onClick={onClose}
+    >
+      <div
+        className={`max-h-[90vh] w-full max-w-sm overflow-y-auto rounded-xl bg-[#f5ecd9] text-[#4a3f2f] shadow-2xl ${READABLE_FONT}`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-[#4a3f2f]/10 px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[#4a3f2f]/50">
+              Log completion
+            </p>
+            <h2 className="truncate text-base font-bold text-[#4a3f2f]">{spot.title}</h2>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#4a3f2f]/10 text-lg font-bold text-[#4a3f2f] hover:bg-[#4a3f2f]/20"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="space-y-4 px-5 py-4">
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-[#4a3f2f]/70">
+              Rating (optional)
+            </label>
+            <StarRating value={rating} onChange={setRating} />
+          </div>
+
+          <div>
+            <label htmlFor="completion-notes" className="mb-1.5 block text-xs font-semibold text-[#4a3f2f]/70">
+              Notes (optional)
+            </label>
+            <textarea
+              id="completion-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              rows={3}
+              placeholder="Anything worth telling the next person?"
+              className="w-full resize-none rounded-lg border border-[#4a3f2f]/15 bg-white/40 px-3 py-2 text-sm text-[#4a3f2f] placeholder:text-[#4a3f2f]/40 focus:outline-none focus:ring-2 focus:ring-[#a1602a]/40"
+            />
+          </div>
+
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-[#4a3f2f]/70">
+              Photo <span className="text-[#c1573a]">(required)</span>
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {photos.map((photo, i) => (
+                <div key={i} className="group relative h-16 w-16 overflow-hidden rounded-lg border border-[#4a3f2f]/10">
+                  <img src={photo} alt={`Upload ${i + 1}`} className="h-full w-full object-cover" />
+                  <button
+                    onClick={() => setPhotos((prev) => prev.filter((_, idx) => idx !== i))}
+                    aria-label="Remove photo"
+                    className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/60 text-[10px] text-white opacity-0 transition group-hover:opacity-100"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex h-16 w-16 flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed border-[#4a3f2f]/25 text-[#4a3f2f]/50 hover:border-[#a1602a] hover:text-[#a1602a]"
+              >
+                <span className="text-base leading-none">+</span>
+                <span className="text-[10px] font-semibold">Add</span>
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  handleFiles(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+            </div>
+            {photos.length === 0 && (
+              <p className="mt-1.5 text-[11px] text-[#4a3f2f]/45">
+                Add at least one photo to log this quest.
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-lg bg-[#4a3f2f]/5 px-3 py-2 text-xs font-semibold text-[#4a3f2f]/70">
+            This entry will earn <span className="text-[#a1602a]">+{points} pts</span>.
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-[#4a3f2f]/10 px-5 py-4">
+          <button
+            onClick={onClose}
+            className="rounded-full px-4 py-2 text-sm font-semibold text-[#6b5d45] hover:bg-[#4a3f2f]/5"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            title={canSubmit ? undefined : 'Add a photo to log this quest'}
+            className="rounded-full bg-[#a1602a] px-5 py-2 text-sm font-bold text-[#f5ecd9] transition hover:brightness-95 disabled:cursor-not-allowed disabled:bg-[#4a3f2f]/15 disabled:text-[#4a3f2f]/40"
+          >
+            Save
+          </button>
         </div>
       </div>
     </div>
@@ -534,7 +980,7 @@ function Sidebar({
         <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4">
           {/* Search with autocomplete */}
           <div className="relative">
-            <label className={`mb-1.5 block text-xs  font-semibold uppercase tracking-wide text-[#4a3f2f]/50`}>
+            <label className={`mb-1.5 block text-xs ${READABLE_FONT} font-semibold uppercase tracking-wide text-[#4a3f2f]/50`}>
               Search
             </label>
             <div className="flex items-center gap-2 rounded-full bg-[#4a3f2f]/5 px-3 py-2">
@@ -566,7 +1012,7 @@ function Sidebar({
                   }
                 }}
                 placeholder="Try 'kimchi' or 'quiet'…"
-                className={`w-full bg-transparent text-base text-[#4a3f2f] placeholder:text-[#4a3f2f]/40 focus:outline-none`}
+                className={`w-full bg-transparent text-base ${READABLE_FONT} text-[#4a3f2f] placeholder:text-[#4a3f2f]/40 focus:outline-none`}
               />
               {query && (
                 <button
@@ -612,7 +1058,7 @@ function Sidebar({
 
           {/* Categories */}
           <div>
-            <span className={`mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#4a3f2f]/50`}>
+            <span className={`mb-1.5 block text-xs ${READABLE_FONT} font-semibold uppercase tracking-wide text-[#4a3f2f]/50`}>
               Categories
             </span>
             <div className="space-y-1.5">
@@ -641,7 +1087,7 @@ function Sidebar({
 
           {/* Tags */}
           <div>
-            <span className={`mb-1.5 block text-xs font-semibold uppercase tracking-wide text-[#4a3f2f]/50`}>
+            <span className={`mb-1.5 block text-xs ${READABLE_FONT} font-semibold uppercase tracking-wide text-[#4a3f2f]/50`}>
               Tags
             </span>
             {availableTags.length === 0 ? (
@@ -706,6 +1152,11 @@ export default function Page() {
   const [spots, setSpots] = useState<Spot[]>(ALL_SPOTS);
   const [loading, setLoading] = useState(false);
 
+  const [completions, setCompletions] = useState<CompletionMap>({});
+  const [bookmarks, setBookmarks] = useState<Set<string>>(new Set());
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [completingSpot, setCompletingSpot] = useState<Spot | null>(null);
+
   useEffect(() => {
     import('./leaflet-icon-fix');
     import('leaflet').then((L) => {
@@ -735,6 +1186,13 @@ export default function Page() {
     });
   }, []);
 
+  // Load per-user completion, bookmark, and favorite state on mount.
+  useEffect(() => {
+    setCompletions(loadCompletions());
+    setBookmarks(loadIdSet(BOOKMARKS_KEY));
+    setFavorites(loadIdSet(FAVORITES_KEY));
+  }, []);
+
   // Re-run the (mock, soon-to-be-real) fetch whenever filters change.
   useEffect(() => {
     const controller = new AbortController();
@@ -759,6 +1217,8 @@ export default function Page() {
     );
     return Array.from(tagSet).sort();
   }, [activeCategories]);
+
+  const totalPoints = useMemo(() => totalPointsFrom(completions), [completions]);
 
   const toggleCategory = (category: Category) => {
     setActiveCategories((prev) => {
@@ -796,6 +1256,33 @@ export default function Page() {
     setQuery('');
     setActiveCategories(new Set(ALL_CATEGORIES));
     setActiveTags(new Set());
+  };
+
+  const toggleBookmark = (spotId: string) => {
+    setBookmarks((prev) => {
+      const next = new Set(prev);
+      next.has(spotId) ? next.delete(spotId) : next.add(spotId);
+      persistIdSet(BOOKMARKS_KEY, next);
+      return next;
+    });
+  };
+
+  const toggleFavorite = (spotId: string) => {
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      next.has(spotId) ? next.delete(spotId) : next.add(spotId);
+      persistIdSet(FAVORITES_KEY, next);
+      return next;
+    });
+  };
+
+  const addCompletion = (spotId: string, entry: CompletionEntry) => {
+    setCompletions((prev) => {
+      const next = { ...prev, [spotId]: [...(prev[spotId] ?? []), entry] };
+      persistCompletions(next);
+      return next;
+    });
+    setCompletingSpot(null);
   };
 
   return (
@@ -855,7 +1342,13 @@ export default function Page() {
             spots.map((spot) => (
               <Marker key={spot.id} position={spot.position} icon={icons[spot.category]}>
                 <Popup>
-                  <SpotCard spot={spot} onExpand={setSelectedSpot} />
+                  <SpotCard
+                    spot={spot}
+                    onExpand={setSelectedSpot}
+                    completedCount={(completions[spot.id] ?? []).length}
+                    isBookmarked={bookmarks.has(spot.id)}
+                    onToggleBookmark={() => toggleBookmark(spot.id)}
+                  />
                 </Popup>
               </Marker>
             ))}
@@ -869,16 +1362,21 @@ export default function Page() {
           ☰ Explore
         </button>
 
-        {/* Account section, top-right */}
-        <Link
-          href="/dashboard"
-          className="absolute right-4 top-4 z-[500] flex items-center gap-2 rounded-full bg-[#f5ecd9] px-2.5 py-2 shadow-lg transition hover:brightness-95"
-        >
-          <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-[#a1602a] text-sm ${READABLE_FONT} font-bold text-[#f5ecd9]`}>
-            U
-          </span>
-          <span className={`pr-1 text-sm ${READABLE_FONT} font-semibold text-[#4a3f2f]`}>Account</span>
-        </Link>
+        {/* Points + account, top-right */}
+        <div className="absolute right-4 top-4 z-[500] flex items-center gap-2">
+          <div className={`flex items-center gap-1.5 rounded-full bg-[#f5ecd9] px-3 py-2 text-sm font-bold text-[#a1602a] shadow-lg`}>
+            {totalPoints} pts
+          </div>
+          <Link
+            href="/dashboard"
+            className="flex items-center gap-2 rounded-full bg-[#f5ecd9] px-2.5 py-2 shadow-lg transition hover:brightness-95"
+          >
+            <span className={`flex h-7 w-7 items-center justify-center rounded-full bg-[#a1602a] text-sm ${READABLE_FONT} font-bold text-[#f5ecd9]`}>
+              U
+            </span>
+            <span className={`pr-1 text-sm ${READABLE_FONT} font-semibold text-[#4a3f2f]`}>Account</span>
+          </Link>
+        </div>
 
         {loading && (
           <div className={`absolute right-4 top-16 z-[500] rounded-full bg-[#f5ecd9] px-3 py-1.5 text-sm ${READABLE_FONT} font-semibold text-[#6b5d45] shadow-md`}>
@@ -897,7 +1395,24 @@ export default function Page() {
       </div>
 
       {selectedSpot && (
-        <ExpandedWidget spot={selectedSpot} onClose={() => setSelectedSpot(null)} />
+        <ExpandedWidget
+          spot={selectedSpot}
+          entries={completions[selectedSpot.id] ?? []}
+          isFavorited={favorites.has(selectedSpot.id)}
+          onToggleFavorite={() => toggleFavorite(selectedSpot.id)}
+          isBookmarked={bookmarks.has(selectedSpot.id)}
+          onToggleBookmark={() => toggleBookmark(selectedSpot.id)}
+          onLogCompletion={() => setCompletingSpot(selectedSpot)}
+          onClose={() => setSelectedSpot(null)}
+        />
+      )}
+
+      {completingSpot && (
+        <CompletionModal
+          spot={completingSpot}
+          onClose={() => setCompletingSpot(null)}
+          onSubmit={(entry) => addCompletion(completingSpot.id, entry)}
+        />
       )}
     </main>
   );
