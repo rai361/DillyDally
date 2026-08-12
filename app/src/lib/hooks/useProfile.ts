@@ -51,10 +51,18 @@ export default function useProfile() {
     });
     
     const { mutate: setAvatar } = useMutation({
-        mutationFn: async (file: File) => {
+        // mutationFn: async (file: File) => {
+        //     if (!user) return;
+
+        //     return updateUserAvatar(user.id, file);
+        // },
+        mutationFn: async (image: string) => {
             if (!user) return;
 
-            return updateUserAvatar(user.id, file);
+            const { data, error } = await supabase
+                .from('users')
+                .update({ avatar_url: image })
+                .eq('user_id', user.id);
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['profile'] });

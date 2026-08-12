@@ -6,19 +6,19 @@ import { User } from "@supabase/supabase-js";
 import { isAdmin } from "../auth";
 
 interface UserState {
-    isAuthenticated: boolean,
-    user: User | null,
-    isAdmin: boolean
+    isAuthenticated: boolean;
+    user: User | null;
+    isAdmin: boolean;
+    isUserLoaded: boolean;
 }
 
-const NULL_USER_STATE: UserState = { 
-    isAuthenticated: false,
-    user: null,
-    isAdmin: false
-};
-
 export default function useAuth() {
-    const [userState, setUserState] = useState<UserState>(NULL_USER_STATE);
+    const [userState, setUserState] = useState<UserState>({ 
+        isAuthenticated: false,
+        user: null,
+        isAdmin: false,
+        isUserLoaded: false
+    });
     
     useEffect(() => {
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
@@ -29,9 +29,15 @@ export default function useAuth() {
                     user,
                     isAdmin: isAdmin(user),
                     isAuthenticated: true,
+                    isUserLoaded: true
                 });
             } else {
-                setUserState(NULL_USER_STATE);
+                setUserState({ 
+                    isAuthenticated: false,
+                    user: null,
+                    isAdmin: false,
+                    isUserLoaded: true
+                });
             }
         });
 

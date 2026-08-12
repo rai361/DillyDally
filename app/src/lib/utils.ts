@@ -21,3 +21,19 @@ export async function generateNonce(): Promise<string[]> {
 export function getFileExt(fileName: string): string {
     return fileName.substring(fileName.lastIndexOf('.') + 1);
 }
+
+export async function toDataURL(file: File): Promise<string> {
+    const reader = new FileReader();
+
+    return new Promise((resolve, reject) => {
+        reader.onload = () => {
+            if (typeof reader.result === 'string') {
+                resolve(reader.result as string);
+            }
+        };
+
+        reader.onerror = reject;
+        
+        reader.readAsDataURL(file);
+    });
+}

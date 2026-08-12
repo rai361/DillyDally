@@ -1,10 +1,25 @@
-import { type SupabaseClient } from "@supabase/supabase-js";
 import { supabase } from "./supabase/client";
 import { getFileExt } from "./utils";
+import { Quest, QuestCompletionEntry } from "./types";
 
 export interface ImageUpload {
     file: File;
     caption?: string;
+}
+
+export async function updateCompletions(userId: string, questId: string, entry: Partial<QuestCompletionEntry>) {
+  const { data, error } = await supabase
+      .from('completed')
+      .insert({
+        user_id: userId,
+        quest_id: questId,
+        ...entry
+      })
+      .select();
+
+    if (error) throw error;
+    
+    return data;
 }
 
 export async function getUserProfile() {
@@ -69,7 +84,7 @@ export async function getBookmarkedQuests() {
     return data ?? [];
 }
 
-export async function getSideQuests() {
+export async function getSideQuests(): Promise<Quest[]> {
     const { data, error } = await supabase
         .from('side_quests')
         .select('*');
@@ -88,24 +103,6 @@ export async function getPinnedImages() {
     if (error) throw error;
     
     return data ?? [];
-}
-
-export async function pinImage(imageId: string) {
-    const { data, error } = await supabase
-        .from('gallery')
-        .update({ pinned: true })
-        .eq('id', imageId);
-    
-    if (error) throw error;
-}
-
-export async function unpinImage(imageId: string) {
-    const { data, error } = await supabase
-        .from('gallery')
-        .update({ pinned: false })
-        .eq('id', imageId);
-    
-    if (error) throw error;
 }
 
 export async function submitQuestForApproval({

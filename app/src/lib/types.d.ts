@@ -8,7 +8,7 @@ interface UserProfile {
 
 type Category = 'User Submitted' | 'Promoted' | 'Food!' | 'Parks';
 
-interface Spot {
+interface Quest {
   id: string;
   position: [number, number];
   title: string;
@@ -19,12 +19,23 @@ interface Spot {
   time: string;
   category: Category;
   tags: string[];
+  status: "approved" | "pending" | "rejected";
 }
 
 interface GalleryImage {
   id: string;
   imageUrl: string;
   caption: string;
+  createdAt: string;
 }
 
-export { UserProfile, Category, Spot, GalleryImage };
+interface QuestCompletionEntry {
+  id: string;
+  rating: number;
+  note: string;
+  imageUrls: string[];
+  points: number;
+  completedAt: string; // ISO date
+}
+
+export { UserProfile, Category, Quest, GalleryImage, QuestCompletionEntry };
