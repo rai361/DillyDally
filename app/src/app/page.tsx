@@ -3,6 +3,7 @@
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import ChatWidget from './chat-widget';
 
 const MapContainer = dynamic(
   () => import('react-leaflet').then((mod) => mod.MapContainer),
@@ -1193,6 +1194,22 @@ export default function Page() {
     setFavorites(loadIdSet(FAVORITES_KEY));
   }, []);
 
+    // Listen for chat widget requests to open a spot (dispatched from ChatWidget)
+    useEffect(() => {
+      const handler = (e: any) => {
+        try {
+          const spotId = e?.detail?.spotId;
+          if (!spotId) return;
+          const found = spots.find((s) => s.id === spotId);
+          if (found) setSelectedSpot(found);
+        } catch (err) {
+          // ignore
+        }
+      };
+      window.addEventListener('open-spot', handler as EventListener);
+      return () => window.removeEventListener('open-spot', handler as EventListener);
+    }, [spots]);
+
   // Re-run the (mock, soon-to-be-real) fetch whenever filters change.
   useEffect(() => {
     const controller = new AbortController();
@@ -1414,6 +1431,9 @@ export default function Page() {
           onSubmit={(entry) => addCompletion(completingSpot.id, entry)}
         />
       )}
+
+      <ChatWidget />
+
     </main>
   );
 }
