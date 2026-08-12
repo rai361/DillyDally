@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import 'leaflet/dist/leaflet.css'; 
+import 'leaflet/dist/leaflet.css';
+import GooseTransition from '../components/GooseTransition';
 
 export const metadata: Metadata = {
   title: 'DillyDally',
@@ -14,7 +15,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-[#f0e6d2]">{children}</body>
+      <body className="bg-[#f0e6d2]">
+        <GooseTransition />
+        {children}
+      </body>
     </html>
   );
 }

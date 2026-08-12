@@ -37,3 +37,56 @@ body {
     font-size: 100%; 
   }
 }
+
+/* Goose transition overlay styles */
+.goose-overlay {
+  position: fixed;
+  inset: 0; /* top:0; right:0; bottom:0; left:0; */
+  background: #f0e6d2; /* same beige as the site root */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  gap: 1rem;
+  pointer-events: none; /* allow clicks to pass through during transitions only if needed */
+}
+
+/* enter: drop down from above */
+.goose-overlay.enter {
+  pointer-events: auto; /* block interaction while visible */
+  animation: gooseEnter 450ms cubic-bezier(.2,.9,.3,1) forwards;
+}
+
+/* exit: slide up out of view */
+.goose-overlay.exit {
+  pointer-events: auto;
+  animation: gooseExit 450ms cubic-bezier(.2,.9,.3,1) forwards;
+}
+
+.goose-gif {
+  width: 220px;
+  height: auto;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,0.08));
+}
+
+.goose-caption {
+  margin-top: 8px;
+  font-size: 1.25rem;
+  color: #2b2b2b;
+  font-weight: 700;
+  text-transform: lowercase;
+  letter-spacing: 0.6px;
+}
+
+@keyframes gooseEnter {
+  0% { transform: translateY(-120%); opacity: 1; }
+  60% { transform: translateY(0%); opacity: 1; }
+  100% { transform: translateY(0%); opacity: 1; }
+}
+
+@keyframes gooseExit {
+  0% { transform: translateY(0%); opacity: 1; }
+  100% { transform: translateY(-120%); opacity: 0; }
+}
