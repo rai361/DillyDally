@@ -12,24 +12,6 @@ import { Category, GalleryImage, Quest } from '@/lib/types';
 import { supabase } from '@/lib/supabase/client';
 import { toDataURL } from '@/lib/utils';
 
-interface CompletionEntry {
-  id: string;
-  rating: number;
-  notes: string;
-  photos: string[];
-  points: number;
-  completedAt: string;
-}
-
-type CompletionMap = Record<string, CompletionEntry[]>;
-
-function totalPointsFrom(map: CompletionMap): number {
-  return Object.values(map).reduce(
-    (sum, entries) => sum + entries.reduce((s, e) => s + e.points, 0),
-    0
-  );
-}
-
 const CATEGORY_BADGE_STYLES: Record<Category, string> = {
   'User Submitted': 'bg-[#6b8fb5] text-[#f5ecd9]',
   Promoted: 'bg-[#c9a13b] text-[#f5ecd9]',
@@ -124,43 +106,6 @@ function FavoriteQuestCard({ quest }: { quest: Quest }) {
       </div>
       <span className="shrink-0 text-xs font-medium text-[#a1602a]">Map →</span>
     </Link>
-  );
-}
-
-function FollowButton() {
-  const [following, setFollowing] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    // TODO: AJSIASH
-    setFollowing(true);
-  }, []);
-
-  const toggle = () => {
-    setFollowing((prev) => {
-      const next = !prev;
-      return next;
-    });
-  };
-
-  return (
-    <button
-      onClick={toggle}
-      className={`group mt-4 rounded-full px-5 py-2 text-sm font-semibold shadow-md transition ${
-        following
-          ? 'bg-[#4a3f2f]/10 text-[#4a3f2f] hover:bg-[#c1573a]/10 hover:text-[#c1573a]'
-          : 'bg-[#a1602a] text-[#f5ecd9] hover:brightness-95'
-      }`}
-    >
-      {following ? (
-        <>
-          <span className="group-hover:hidden">Following</span>
-          <span className="hidden group-hover:inline">Unfollow</span>
-        </>
-      ) : (
-        '+ Follow'
-      )}
-    </button>
   );
 }
 
