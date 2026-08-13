@@ -200,26 +200,27 @@ function AvatarUpload({ image, setImage } : { image: string, setImage: (image: s
 }
 
 function Editing({ 
+  handle,
   displayName, 
   bio, 
-  setName,
-  setBio,
+  setProfile,
   setAvatar,
   onClose,
   avatarUrl
 } : { 
+  handle: string,
   displayName: string, 
   avatarUrl: string,
   bio: string,
-  setName: (value: string) => any,
-  setBio: (value: string) => any,
+  setProfile: (value: any) => any,
   setAvatar: (url: string) => any,
   onClose: () => any
 }) {
-  const [fields, setFields] = useState<{ name: string, biography: string, image: string }>({
+  const [fields, setFields] = useState<{ name: string, biography: string, image: string, handle: string }>({
     name: displayName,
     biography: bio,
-    image: avatarUrl
+    image: avatarUrl,
+    handle
   });
 
   const modifyField = function<K extends keyof typeof fields>(field: K, value: typeof fields[K]) {
@@ -269,6 +270,17 @@ function Editing({
       </div>
       <div className="mt-6">
         <label>
+          Handle
+        </label>
+        <input 
+          type="text" 
+          defaultValue={handle}
+          onChange={handleFieldUpdate('handle')}
+          className="w-full resize-none rounded-lg border border-[#4a3f2f]/15 bg-white/40 px-3 py-2 text-sm text-[#4a3f2f] placeholder:text-[#4a3f2f]/40 focus:outline-none focus:ring-2 focus:ring-[#a1602a]/40"
+        />
+      </div>
+      <div className="mt-6">
+        <label>
           Bio
         </label>
         <textarea 
@@ -280,10 +292,13 @@ function Editing({
       </div>
 
       <button
-        type="submit"
         onClick={() => {
-          setName(fields.name);
-          setBio(fields.biography);
+          setProfile({
+            display_name: fields.name,
+            bio: fields.biography,
+            handle: fields.handle
+          });
+
           setAvatar(fields.image);
 
           onClose();
@@ -298,7 +313,7 @@ function Editing({
 
 export default function DashboardPage() {
   const { user, isAuthenticated, isUserLoaded } = useAuth();
-  const { profile, setAvatar, setName, setBio } = useProfile();
+  const { profile, setAvatar, setProfile } = useProfile();
 
   const [isEditing, setEditing] = useState(false);
 
@@ -306,14 +321,16 @@ export default function DashboardPage() {
     queryKey: ['favorites'],
     queryFn: getFavoritedQuests,
     retry: false,
-    enabled: isUserLoaded && isAuthenticated
+    enabled: isUserLoaded && isAuthenticated,
+    initialData: []
   });
 
   const { data: pinnedPhotos, isPending: isPhotosPending } = useQuery({
     queryKey: ['pinned_photos'],
     queryFn: getPinnedImages,
     retry: false,
-    enabled: isUserLoaded && isAuthenticated
+    enabled: isUserLoaded && isAuthenticated,
+    initialData: []
   });
 
   const { data: points } = useQuery({
@@ -326,8 +343,6 @@ export default function DashboardPage() {
       .select('*')
       .eq('user_id', user.id)
       
-      console.log('points scoreboard auhdusadsa', data, error);
-
       if (error) throw error;
 
       if (!data || data.length == 0) return 0;
@@ -386,8 +401,8 @@ export default function DashboardPage() {
             avatarUrl={profile.avatarUrl}
             displayName={profile.displayName}
             bio={profile.bio}
-            setName={setName}
-            setBio={setBio}
+            setProfile={setProfile}
+            handle={profile.handle}
             // @ts-ignore
             setAvatar={setAvatar}
             onClose={() => {
@@ -402,6 +417,9 @@ export default function DashboardPage() {
               />
               <h1 className="mt-4 text-2xl font-extrabold leading-tight text-[#4a3f2f]">
                 {profile.displayName}
+              </h1>
+              <h1 className="mt-4 text-xl font-extrabold leading-tight text-[#4a3f2f]">
+                @{profile.handle}
               </h1>
               <h1 className="mt-3 max-w-sm text-center text-sm leading-relaxed text-[#6b5d45]">
                 {profile.bio}

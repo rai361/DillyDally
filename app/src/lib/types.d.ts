@@ -1,8 +1,9 @@
 interface UserProfile {
     bio: string;
-    followers: number;
-    following: number;
+    // followers: number;
+    // following: number;
     avatarUrl: string;
+    handle: string;
     displayName: string;
 }
 

@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import useAuth from "./useAuth";
 import { supabase } from "../supabase/client";
-import { getFollowerStats, getUserProfile, updateUserAvatar } from "../functions";
+import { getFollowerStats, getUserProfile } from "../functions";
 import { useEffect } from "react";
 
 export default function useProfile() {
@@ -36,6 +36,23 @@ export default function useProfile() {
     
         return userData;
     }
+
+    const { mutate: setProfile } = useMutation({
+        async mutationFn(params: any) {
+            if (!user) return;
+
+            params.user_id = user?.id;
+
+            const { data, error } = await supabase
+                .from('users')
+                .upsert(params)
+                .eq('user_id', user?.id)
+                .select();
+        },
+        onSuccess() {
+            queryClient.invalidateQueries({ queryKey: ['profile'] });
+        }
+    })
 
     const { mutate: setName } = useMutation({
         mutationFn: (name: string) => updateProfile({ user_id: user?.id, display_name: name }),
@@ -87,6 +104,7 @@ export default function useProfile() {
 
     return {
         profile: user && {
+            handle: profile?.handle,
             bio: profile?.bio,
             followers: followerStats?.followers ?? 0,
             following: followerStats?.following ?? 0,
@@ -95,6 +113,7 @@ export default function useProfile() {
         },
         setAvatar,
         setName,
-        setBio
+        setBio,
+        setProfile
     };
 }
