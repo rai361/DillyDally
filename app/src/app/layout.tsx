@@ -6,6 +6,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { GoogleOAuthProvider } from "@react-oauth/google";
 import GoogleOneTap from "@/lib/components/google/GoogleOneTap";
 import QueryProvider from "@/lib/providers/QueryProvider";
+import GooseTransition from '@/lib/components/GooseTransition';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -41,6 +42,7 @@ export default async function RootLayout({
         >
           <QueryProvider>
             <GoogleOneTap />
+            <GooseTransition />
             {children}
           </QueryProvider>
         </GoogleOAuthProvider>

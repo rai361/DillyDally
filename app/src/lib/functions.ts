@@ -23,9 +23,15 @@ export async function updateCompletions(userId: string, questId: string, entry: 
 }
 
 export async function getUserProfile() {
+    // bad
+    const { data: { user } } = await supabase.auth.getUser();
+
+    if (!user) return;
+
     const { data, error } = await supabase
         .from('users')
         .select('*')
+        .eq('user_id', user.id)
         .single();
 
     if (error) throw error;
@@ -77,6 +83,16 @@ export async function getFollowerStats(userId: string): Promise<{ followers: num
 export async function getBookmarkedQuests() {
     const { data, error } = await supabase
         .from('bookmarks')
+        .select('*, side_quests(*)');
+
+    if (error) throw error;
+    
+    return data ?? [];
+}
+
+export async function getFavoritedQuests() {
+    const { data, error } = await supabase
+        .from('favorites')
         .select('*, side_quests(*)');
 
     if (error) throw error;

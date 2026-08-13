@@ -1,6 +1,6 @@
 'use client';
 
-import { getBookmarkedQuests, getPinnedImages } from '@/lib/functions';
+import { getFavoritedQuests, getPinnedImages } from '@/lib/functions';
 import { HypeIndicator } from '@/lib/components/Indicators';
 import SectionEyebrow from '@/lib/components/SectionEyebrow';
 import useAuth from '@/lib/hooks/useAuth';
@@ -297,14 +297,14 @@ function Editing({
 }
 
 export default function DashboardPage() {
-  const { isAuthenticated, isUserLoaded } = useAuth();
+  const { user, isAuthenticated, isUserLoaded } = useAuth();
   const { profile, setAvatar, setName, setBio } = useProfile();
 
   const [isEditing, setEditing] = useState(false);
 
   const { data: bookmarkedQuests, isPending } = useQuery({
-    queryKey: ['bookmarked_quests'],
-    queryFn: getBookmarkedQuests,
+    queryKey: ['favorites'],
+    queryFn: getFavoritedQuests,
     retry: false
   });
 
@@ -317,15 +317,20 @@ export default function DashboardPage() {
   const { data: points } = useQuery({
     queryKey: ['points'],
     queryFn: async () => {
+      if (!user) return;
+
       const { data, error } = await supabase
         .from('scoreboard')
         .select('*')
-        .single()
-
+        .eq('user_id', user.id)
+        
       if (error) throw error;
 
-      return data?.points ?? 0;
-    }
+      if (!data || data.length == 0) return 0;
+
+      return data[0]?.points ?? 0;
+    },
+    retry: false
   });
 
 
@@ -340,11 +345,15 @@ export default function DashboardPage() {
   if (!isAuthenticated || !profile) {
     return (
       <div className="w-full flex flex-col flex-1 justify-center items-center">
-        Not Logged In
+        <div className="p-5 text-4xl flex flex-col justify-center items-center border-solid border-4 border-[#4a3f2f]/10 rounded-lg bg-[#f5ecd9] text-[#4a3f2f]">
+          <p>Not Logged In</p>
 
-        <a>
-          Go to /login
-        </a>
+          <p>Go to&nbsp;
+            <a href="/login" className="underline cursor-pointer">
+              /login
+            </a>
+          </p>
+        </div>
       </div>
     );
   }

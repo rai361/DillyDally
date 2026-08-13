@@ -4,12 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import useAuth from "./useAuth";
 import { supabase } from "../supabase/client";
 import { getFollowerStats, getUserProfile, updateUserAvatar } from "../functions";
+import { useEffect } from "react";
 
 export default function useProfile() {
     const { user } = useAuth();
     const queryClient = useQueryClient();
 
-    const { data: profile } = useQuery({
+    const { data: profile, isPending } = useQuery({
         queryKey: ['profile'],
         queryFn: getUserProfile,
         enabled: !!user,
@@ -28,7 +29,7 @@ export default function useProfile() {
     
         const { data: userData, error: updateError } = await supabase
             .from('users')
-            .update(profile)
+            .upsert(profile)
             .eq('user_id', user?.id);
     
         if (updateError) throw updateError;
@@ -37,14 +38,14 @@ export default function useProfile() {
     }
 
     const { mutate: setName } = useMutation({
-        mutationFn: (name: string) => updateProfile({ display_name: name }),
+        mutationFn: (name: string) => updateProfile({ user_id: user?.id, display_name: name }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['profile'] });
         }
     });
 
     const { mutate: setBio } = useMutation({
-        mutationFn: (bio: string) => updateProfile({ bio }),
+        mutationFn: (bio: string) => updateProfile({ user_id: user?.id, bio }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['profile'] });
         }
@@ -61,13 +62,28 @@ export default function useProfile() {
 
             const { data, error } = await supabase
                 .from('users')
-                .update({ avatar_url: image })
+                .upsert({ user_id: user?.id, avatar_url: image })
                 .eq('user_id', user.id);
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['profile'] });
         }
     });
+
+    useEffect(() => {
+        if (!user) return;
+
+        if (isPending) return;
+
+        if (!profile) {
+            supabase
+                .from("users")
+                .insert({ user_id: user.id })
+                .then(() => {
+                    queryClient.invalidateQueries({ queryKey: ['profile'] });
+                });
+        }
+    }, [profile, user, isPending]);
 
     return {
         profile: user && {

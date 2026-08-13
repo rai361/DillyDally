@@ -2,6 +2,7 @@ import { getUserProfile } from "@/lib/functions";
 import { isAdmin } from "@/lib/auth";
 import { PriceIndicator, TimeIndicator } from "@/lib/components/Indicators";
 import { createSupabaseClient, supabaseServer } from "@/lib/supabase/server"
+import { redirect } from "next/navigation";
 
 function spotCard(spot: any) {
     return (
@@ -29,9 +30,11 @@ export default async function AdminDashboard() {
     console.log(user);
 
     if (!user || !isAdmin(user)) {
+        redirect('/login');
+
         return (
             <div className="w-full flex flex-1 flex-col items-center justify-center">
-                <div className="border-r-20 border-2 border-black">
+                <div className="p-5 rounded-md border-2 border-black">
                     No access u cheeky li'l hecker
                 </div>
             </div>

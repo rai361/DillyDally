@@ -12,6 +12,10 @@ import { StarRating } from '@/lib/components/StarRating';
 import { AccountPopup } from '@/lib/components/AccountPopup';
 import { useMapEvents } from 'react-leaflet';
 import { toDataURL } from '@/lib/utils';
+import ChatWidget from '../lib/components/ChatWidget';
+import { ALL_CATEGORIES } from '@/lib/constants';
+import useProfile from '@/lib/hooks/useProfile';
+import { useRouter } from 'next/navigation';
 
 interface PickerProps {
   quests: Quest[]
@@ -90,8 +94,6 @@ const CATEGORY_ICONS: Record<Category, string> = {
   Parks: '🌳',
 };
 
-const ALL_CATEGORIES: Category[] = ['Food!', 'Parks', 'User Submitted', 'Promoted'];
-
 function CategoryBadge({ category }: { category: Category }) {
   return (
     <span
@@ -125,7 +127,7 @@ function QuestCard({
   onToggleBookmark: () => void;
   updateQuestStatus: (variables: string[]) => any
 }) {
-  const { isAdmin } = useAuth();
+  const { isAuthenticated, isAdmin } = useAuth();
 
   return (
     <div className="relative w-56 overflow-hidden rounded-lg bg-[#f5ecd9] text-[#4a3f2f]">
@@ -155,35 +157,40 @@ function QuestCard({
         </div>
       </button>
 
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleBookmark();
-        }}
-        aria-label={isBookmarked ? 'Remove bookmark' : 'Save for later'}
-        className={`absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-sm shadow-md transition ${
-          isBookmarked ? 'bg-[#a1602a] text-[#f5ecd9]' : 'bg-[#f5ecd9]/90 text-[#4a3f2f]/60 hover:text-[#4a3f2f]'
-        }`}
-      >
-        {isBookmarked ? '🔖' : '📑'}
-      </button>
+      {isAuthenticated && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleBookmark();
+          }}
+          aria-label={isBookmarked ? 'Remove bookmark' : 'Save for later'}
+          className={`absolute left-2 top-2 flex h-7 w-7 items-center justify-center rounded-full text-sm shadow-md transition ${
+            isBookmarked ? 'bg-[#a1602a] text-[#f5ecd9]' : 'bg-[#f5ecd9]/90 text-[#4a3f2f]/60 hover:text-[#4a3f2f]'
+          }`}
+        >
+          {isBookmarked ? '🔖' : '📑'}
+        </button>
+      )}
 
-      <div className="absolute right-2 top-2 flex flex-col gap-1">
-        {[["approved", "✓", "bg-[#48871d]"], ["pending", "", "bg-[#cfb223]"], ["rejected", "✘", "bg-[#9f3a33]"]].map(status => (
-          <button  
-            onClick={() => {
-              if (status[0] != "pending") {
-                updateQuestStatus([quest.id, status[0]])
-              }
-            }}        
-            className={`flex h-7 w-7 items-center justify-center rounded-full text-sm shadow-md transition ${
-              status[0] == quest.status ? `${status[2]} text-[#f5ecd9]` : 'bg-[#f5ecd9]/90 text-[#4a3f2f]/60 hover:text-[#4a3f2f]'
-            }`}
-          >
-            {status[1]}
-          </button>
-        ))}
-      </div>
+      {isAdmin && (
+        <div className="absolute right-2 top-2 flex flex-col gap-1">
+          {[["approved", "✓", "bg-[#48871d]"], ["pending", "", "bg-[#cfb223]"], ["rejected", "✘", "bg-[#9f3a33]"]].map(status => (
+            <button  
+              key={status[0]}
+              onClick={() => {
+                if (status[0] != "pending") {
+                  updateQuestStatus([quest.id, status[0]])
+                }
+              }}        
+              className={`flex h-7 w-7 items-center justify-center rounded-full text-sm shadow-md transition ${
+                status[0] == quest.status ? `${status[2]} text-[#f5ecd9]` : 'bg-[#f5ecd9]/90 text-[#4a3f2f]/60 hover:text-[#4a3f2f]'
+              }`}
+            >
+              {status[1]}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -207,6 +214,8 @@ function ExpandedWidget({
   onLogCompletion: () => void;
   onClose: () => void;
 }) {
+  const { isAuthenticated } = useAuth();
+
   const sortedEntries = [...entries].sort(
     (a, b) => new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime()
   );
@@ -264,72 +273,77 @@ function ExpandedWidget({
             </div>
           </div>
 
-          {completedCount > 0 && (
-            <div className={`flex items-center gap-2 rounded-lg bg-[#3f7a4e]/10 px-3 py-2 text-xs readable-font font-semibold text-[#3f7a4e]`}>
-              <span>
-                Completed {completedCount}× · {totalQuestPoints} pts earned
-              </span>
-              {isFavorited && <span className="ml-auto text-[#c9a13b]">⭐ Featured</span>}
-            </div>
-          )}
+          {isAuthenticated && (
+            <>
+              {completedCount > 0 && (
+                <div className={`flex items-center gap-2 rounded-lg bg-[#3f7a4e]/10 px-3 py-2 text-xs readable-font font-semibold text-[#3f7a4e]`}>
+                  <span>
+                    Completed {completedCount}× · {totalQuestPoints} pts earned
+                  </span>
+                  {isFavorited && <span className="ml-auto text-[#c9a13b]">⭐ Featured</span>}
+                </div>
+              )}
 
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              onClick={onToggleBookmark}
-              aria-label={isBookmarked ? 'Remove bookmark' : 'Save for later'}
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg shadow-md transition ${
-                isBookmarked ? 'bg-[#a1602a] text-[#f5ecd9]' : 'bg-[#4a3f2f]/5 text-[#4a3f2f]/60 hover:bg-[#4a3f2f]/10'
-              }`}
-            >
-              {isBookmarked ? '🔖' : '📑'}
-            </button>
-            <button
-              onClick={onToggleFavorite}
-              aria-label={isFavorited ? 'Remove from profile' : 'Feature on profile'}
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg shadow-md transition ${
-                isFavorited ? 'bg-[#c9a13b] text-[#f5ecd9]' : 'bg-[#4a3f2f]/5 text-[#4a3f2f]/60 hover:bg-[#4a3f2f]/10'
-              }`}
-            >
-              ⭐
-            </button>
-            <button
-              onClick={onLogCompletion}
-              className={`flex-1 rounded-full bg-[#3f7a4e] px-4 py-3 text-lg font-bold text-[#f5ecd9] shadow-md transition hover:brightness-95`}
-            >
-              {completedCount > 0 ? 'Log again' : 'Mark as completed'}
-            </button>
-          </div>
-          <p className={`text-center text-[11px] readable-font text-[#4a3f2f]/40`}>
-            Bookmarks stay private. Featuring adds this quest to your public profile.
-          </p>
-
-          {sortedEntries.length > 0 && (
-            <div className="space-y-2 border-t border-[#4a3f2f]/10 pt-3">
-              <p className={`text-xs readable-font font-semibold uppercase tracking-wide text-[#4a3f2f]/50`}>
-                Your log ({sortedEntries.length})
-              </p>
-              <div className="max-h-40 space-y-2 overflow-y-auto pr-1">
-                {sortedEntries.map((entry) => (
-                  <div key={entry.id} className="flex items-center gap-2 rounded-lg bg-[#4a3f2f]/5 p-2">
-                    {entry.imageUrls[0] && (
-                      <img src={entry.imageUrls[0]} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className={`truncate text-xs readable-font font-semibold text-[#4a3f2f]`}>
-                        {formatDate(entry.completedAt)} · +{entry.points} pts
-                      </p>
-                      {entry.note && (
-                        <p className={`truncate text-[11px] readable-font text-[#6b5d45]`}>{entry.note}</p>
-                      )}
-                    </div>
-                    {entry.rating > 0 && (
-                      <span className="shrink-0 text-xs text-[#c9a13b]">{'★'.repeat(entry.rating)}</span>
-                    )}
-                  </div>
-                ))}
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  onClick={onToggleBookmark}
+                  aria-label={isBookmarked ? 'Remove bookmark' : 'Save for later'}
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg shadow-md transition ${
+                    isBookmarked ? 'bg-[#a1602a] text-[#f5ecd9]' : 'bg-[#4a3f2f]/5 text-[#4a3f2f]/60 hover:bg-[#4a3f2f]/10'
+                  }`}
+                >
+                  {isBookmarked ? '🔖' : '📑'}
+                </button>
+                <button
+                  onClick={onToggleFavorite}
+                  aria-label={isFavorited ? 'Remove from profile' : 'Feature on profile'}
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-lg shadow-md transition ${
+                    isFavorited ? 'bg-[#c9a13b] text-[#f5ecd9]' : 'bg-[#4a3f2f]/5 text-[#4a3f2f]/60 hover:bg-[#4a3f2f]/10'
+                  }`}
+                >
+                  ⭐
+                </button>
+                <button
+                  onClick={onLogCompletion}
+                  className={`flex-1 rounded-full bg-[#3f7a4e] px-4 py-3 text-lg font-bold text-[#f5ecd9] shadow-md transition hover:brightness-95`}
+                >
+                  {completedCount > 0 ? 'Log again' : 'Mark as completed'}
+                </button>
               </div>
-            </div>
+              <p className={`text-center text-[11px] readable-font text-[#4a3f2f]/40`}>
+                Bookmarks stay private. Featuring adds this quest to your public profile.
+              </p>
+
+              {sortedEntries.length > 0 && (
+                <div className="space-y-2 border-t border-[#4a3f2f]/10 pt-3">
+                  <p className={`text-xs readable-font font-semibold uppercase tracking-wide text-[#4a3f2f]/50`}>
+                    Your log ({sortedEntries.length})
+                  </p>
+                  <div className="max-h-40 space-y-2 overflow-y-auto pr-1">
+                    {sortedEntries.map((entry) => (
+                      <div key={entry.id} className="flex items-center gap-2 rounded-lg bg-[#4a3f2f]/5 p-2">
+                        {entry.imageUrls[0] && (
+                          <img src={entry.imageUrls[0]} alt="" className="h-10 w-10 shrink-0 rounded object-cover" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className={`truncate text-xs readable-font font-semibold text-[#4a3f2f]`}>
+                            {formatDate(entry.completedAt)} · +{entry.points} pts
+                          </p>
+                          {entry.note && (
+                            <p className={`truncate text-[11px] readable-font text-[#6b5d45]`}>{entry.note}</p>
+                          )}
+                        </div>
+                        {entry.rating > 0 && (
+                          <span className="shrink-0 text-xs text-[#c9a13b]">{'★'.repeat(entry.rating)}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
+
         </div>
       </div>
     </div>
@@ -747,6 +761,7 @@ function getSuggestions(query: string, quests: any): Suggestion[] {
 
 function Filters({ 
   quests,
+  filteredQuests,
   query,
   onQueryChange,
   onSelectTag,
@@ -760,6 +775,7 @@ function Filters({
   setStatusFilter
 } : {
   quests: Quest[];
+  filteredQuests: Quest[];
   query: string;
   onQueryChange: (value: string) => void;
   onSelectQuest: (quest: Quest) => void;
@@ -777,7 +793,7 @@ function Filters({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [highlighted, setHighlighted] = useState(0);
 
-  const suggestions = useMemo(() => getSuggestions(query, quests), [query]);
+  const suggestions = useMemo(() => getSuggestions(query, filteredQuests), [query]);
 
   const handleSuggestionPick = (s: Suggestion) => {
     if (s.type === 'quest') {
@@ -967,6 +983,7 @@ function Filters({
 
 function Sidebar({
   quests,
+  filteredQuests,
   open,
   onClose,
   query,
@@ -985,7 +1002,8 @@ function Sidebar({
   statusFilter,
   setStatusFilter
 }: {
-  quests: any;
+  quests: Quest[],
+  filteredQuests: Quest[];
   open: boolean;
   onClose: () => void;
   query: string;
@@ -1086,6 +1104,7 @@ function Sidebar({
         ) : (
           <Filters 
             quests={quests}
+            filteredQuests={filteredQuests}
             query={query}
             onQueryChange={onQueryChange}
             onSelectTag={onSelectTag}
@@ -1150,7 +1169,11 @@ async function fetchResourceAsSet(resource: string){
 }
 
 export default function DillyDallyPage() {
-  const { user, isAdmin } = useAuth();   
+  const { user, isAdmin } = useAuth(); 
+  const { profile } = useProfile();
+
+  const router = useRouter();
+
   const queryClient = useQueryClient();
 
   const { data: favorites } = useQuery({
@@ -1284,6 +1307,53 @@ export default function DillyDallyPage() {
   });
 
   const [statusFilters, setStatusFilters] = useState(['approved']);
+  
+  useEffect(() => {
+    import('./leaflet-icon-fix');
+    import('leaflet').then((L) => {
+      const makeIcon = (color: string) =>
+        L.divIcon({
+          className: '',
+          html: `<div style="
+            width: 22px;
+            height: 22px;
+            border-radius: 50% 50% 50% 0;
+            background: ${color};
+            border: 2px solid #f5ecd9;
+            transform: rotate(-45deg);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.35);
+          "></div>`,
+          iconSize: [22, 22],
+          iconAnchor: [11, 22],
+          popupAnchor: [0, -22],
+        });
+
+      setIcons(       
+        {
+        'User Submitted': makeIcon(CATEGORY_PIN_COLORS['User Submitted']),
+        Promoted: makeIcon(CATEGORY_PIN_COLORS['Promoted']),
+        'Food!': makeIcon(CATEGORY_PIN_COLORS['Food!']),
+        Parks: makeIcon(CATEGORY_PIN_COLORS['Parks']),
+      });
+    });
+  }, []);
+
+  useEffect(() => {
+    const handler = (event: any) => {
+      try {
+        const questId = event?.detail?.questId;
+        if (!questId) return;
+
+        const found = quests.find((quest) => quest.id === questId);
+        if (found) setSelectedQuest(found);
+
+      } catch (err) {
+        // ignore
+      }
+    };
+    window.addEventListener('open-quest', handler as EventListener);
+    return () => window.removeEventListener('open-quest', handler as EventListener);
+  }, [quests]);
 
   function matchesQuery(quest: Quest, query: string): boolean {
     if (!query.trim()) return true;
@@ -1298,12 +1368,14 @@ export default function DillyDallyPage() {
 
   const availableTags = useMemo(() => {
       const tagSet = new Set<string>();
-      const activeQuests = quests.filter(q => activeCategories.has(q.category));
+      const activeQuests = quests
+        .filter(q => activeCategories.has(q.category))
+        .filter(q => statusFilters.includes(q.status));
       
-      activeQuests.forEach(quest => quest.tags.forEach(tag => tagSet.add(tag)))
+      activeQuests.forEach(quest => quest.tags.forEach(tag => tagSet.add(tag)));
 
       return Array.from(tagSet).sort();
-    }, [activeCategories, quests]);
+    }, [activeCategories, quests, statusFilters]);
 
   const filteredQuests = useMemo(() => 
     quests.filter(
@@ -1354,41 +1426,11 @@ export default function DillyDallyPage() {
     setStatusFilters(['approved']);
   };
 
-  
-  useEffect(() => {
-    import('./leaflet-icon-fix');
-    import('leaflet').then((L) => {
-      const makeIcon = (color: string) =>
-        L.divIcon({
-          className: '',
-          html: `<div style="
-            width: 22px;
-            height: 22px;
-            border-radius: 50% 50% 50% 0;
-            background: ${color};
-            border: 2px solid #f5ecd9;
-            transform: rotate(-45deg);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.35);
-          "></div>`,
-          iconSize: [22, 22],
-          iconAnchor: [11, 22],
-          popupAnchor: [0, -22],
-        });
-
-      setIcons(       
-        {
-        'User Submitted': makeIcon(CATEGORY_PIN_COLORS['User Submitted']),
-        Promoted: makeIcon(CATEGORY_PIN_COLORS['Promoted']),
-        'Food!': makeIcon(CATEGORY_PIN_COLORS['Food!']),
-        Parks: makeIcon(CATEGORY_PIN_COLORS['Parks']),
-      });
-    });
-  }, []);
-
   return (
     <main className="relative flex h-screen w-screen bg-[#f0e6d2]">
       <Sidebar
-        quests={filteredQuests}
+        quests={quests}
+        filteredQuests={filteredQuests}
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         query={query}
@@ -1518,6 +1560,8 @@ export default function DillyDallyPage() {
             onSubmit={(entry) => addCompletion([completingQuest.id, entry])}
           />
         )}
+
+        <ChatWidget />
     </main>
   );
 }
