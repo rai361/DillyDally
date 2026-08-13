@@ -305,32 +305,37 @@ export default function DashboardPage() {
   const { data: bookmarkedQuests, isPending } = useQuery({
     queryKey: ['favorites'],
     queryFn: getFavoritedQuests,
-    retry: false
+    retry: false,
+    enabled: isUserLoaded && isAuthenticated
   });
 
   const { data: pinnedPhotos, isPending: isPhotosPending } = useQuery({
     queryKey: ['pinned_photos'],
     queryFn: getPinnedImages,
-    retry: false
+    retry: false,
+    enabled: isUserLoaded && isAuthenticated
   });
 
   const { data: points } = useQuery({
     queryKey: ['points'],
     queryFn: async () => {
       if (!user) return;
-
+      
       const { data, error } = await supabase
-        .from('scoreboard')
-        .select('*')
-        .eq('user_id', user.id)
-        
+      .from('scoreboard')
+      .select('*')
+      .eq('user_id', user.id)
+      
+      console.log('points scoreboard auhdusadsa', data, error);
+
       if (error) throw error;
 
       if (!data || data.length == 0) return 0;
 
       return data[0]?.points ?? 0;
     },
-    retry: false
+    retry: false,
+    enabled: isUserLoaded && isAuthenticated
   });
 
 

@@ -1169,7 +1169,7 @@ async function fetchResourceAsSet(resource: string){
 }
 
 export default function DillyDallyPage() {
-  const { user, isAdmin } = useAuth(); 
+  const { user, isAuthenticated, isUserLoaded } = useAuth(); 
   const { profile } = useProfile();
 
   const router = useRouter();
@@ -1178,7 +1178,8 @@ export default function DillyDallyPage() {
 
   const { data: favorites } = useQuery({
     queryKey: ['favorites'],
-    queryFn: () => fetchResourceAsSet('favorites')
+    queryFn: () => fetchResourceAsSet('favorites'),
+    enabled: isUserLoaded && isAuthenticated
   });
 
   const { mutate: toggleFavorite } = useMutation({
@@ -1207,7 +1208,8 @@ export default function DillyDallyPage() {
   
   const { data: bookmarks } = useQuery({
     queryKey: ['bookmarks'],
-    queryFn: () => fetchResourceAsSet('bookmarks')
+    queryFn: () => fetchResourceAsSet('bookmarks'),
+    enabled: isUserLoaded && isAuthenticated
   });
 
   const { mutate: toggleBookmark } = useMutation({
@@ -1245,7 +1247,8 @@ export default function DillyDallyPage() {
 
       return Object.groupBy(data ?? [], (row) => row.quest_id) as CompletionMap;
     },
-    retry: false
+    retry: false,
+    enabled: isUserLoaded && isAuthenticated
   });
 
   const { mutate: addCompletion } = useMutation({
