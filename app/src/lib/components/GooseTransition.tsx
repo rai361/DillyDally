@@ -37,7 +37,7 @@ export default function GooseTransition() {
 
     const wrap = (orig: (...args: any[]) => any) => function (this: any, ...args: any[]) {
       const result = orig.apply(this, args);
-      try { window.dispatchEvent(new Event('goose:navigationstart')); } catch (e) { }
+      try { setTimeout(() => { window.dispatchEvent(new Event('goose:navigationstart')); }, 0); } catch (e) { }
       return result;
     };
 
@@ -46,7 +46,7 @@ export default function GooseTransition() {
     history.pushState = wrap(origPush);
     history.replaceState = wrap(origReplace);
 
-    const onPop = () => window.dispatchEvent(new Event('goose:navigationstart'));
+    const onPop = () => { try { setTimeout(() => { window.dispatchEvent(new Event('goose:navigationstart')); }, 0); } catch (e) { } };
     window.addEventListener('popstate', onPop);
 
     return () => {

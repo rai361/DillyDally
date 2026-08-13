@@ -448,7 +448,7 @@ export default function DashboardPage() {
           <SectionEyebrow icon="⭐">Favorite sidequests</SectionEyebrow>
           <div className="space-y-2.5 mt-3">
             {/* @ts-ignore */}
-            {!isPending && (bookmarkedQuests?.map((bookmark: any) => (
+            {!isPending && ((Array.isArray(bookmarkedQuests) ? bookmarkedQuests : []).map((bookmark: any) => (
               <FavoriteQuestCard key={bookmark.id} quest={bookmark.side_quests} />
             )))}
           </div>
